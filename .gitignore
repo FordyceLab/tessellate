@@ -1,0 +1,9 @@
+# Virtual environment
+.venv
+
+# .pyc files
+*.pyc
+
+# Data directory
+/data
+
