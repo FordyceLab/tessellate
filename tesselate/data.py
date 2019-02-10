@@ -69,45 +69,14 @@ class TesselateDataset(Dataset):
             # Read the data from the HDF5 file
             atomtypes = torch.from_numpy(h5file['atomtypes'][entry][:])
             memberships = h5file['memberships'][entry][:]
-            contacts = h5file['contacts'][entry][:]
-
-        # Get the 'memberships' and 'contacts' dense matrices 
-        memberships = make_sparse_mem_mat(memberships).to_dense()
-        contacts = make_sparse_contact_mat(contacts, len(atomtypes)).to_dense()
-
-        # Extract the covalent bonds between all atoms in the structure
-        covalent = contacts[:, :, 1]
-
-        # Make the normalized adjacency matrix
-        C_hat = covalent + torch.eye(covalent.shape[0])
-        diag = 1 / torch.sqrt(C_hat.sum(dim=1))
-        D_hat = torch.zeros_like(C_hat)
-        n = D_hat.shape[0]
-        D_hat[range(n), range(n)] = diag
-
-        adjacency = D_hat.mm(C_hat).mm(D_hat)
-
-        # Extract the contact maps for training
-        contacts = contacts[:, :, 3:]
-
-        # Tile the membership matrix for multiplication with each channel
-        dense_mem = memberships.repeat(contacts.shape[2], 1, 1)
-
-        # Transfer everything to the GPU for faster processing
-        device = torch.device('cuda:1')
-        dense_mem = dense_mem.to(device)
-        contacts = contacts.to(device)
-
-        # Calculate the targets
-        target = (dense_mem
-                  .bmm(contacts.transpose(0,2))
-                  .bmm(dense_mem.transpose(1, 2)) > 0).float().cpu()
+            adjacency = h5file['adjacency'][entry][:]
+            target = h5file['target'][entry][:]
 
         # Return the data for training
         return {
             'id': entry,
             'atomtypes': atomtypes,
-            'memberships': memberships,
+            'memberships': make_sparse_mem_mat(memberships).to_dense(),
             'adjacency': adjacency,
             'target': target
         }
