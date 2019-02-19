@@ -39,8 +39,10 @@ def process_arpeggio_out(dirname, pdb_id):
     atomtype_file = os.path.join(dirname, pdb_id + '.atomtypes')
     contacts_file = os.path.join(dirname, pdb_id + '.contacts')
     
+    chains = {}
     residues = {}
     atoms = {}
+    
     membership = []
     atom_ids = []
 
@@ -50,8 +52,13 @@ def process_arpeggio_out(dirname, pdb_id):
             # Handle indices
             idx, atom = line.strip().split()
             idx = idx.split('/')
+            chain_idx = idx[0]
             residue_idx = '/'.join(idx[:2])
             atom_idx = '/'.join(idx[:3])
+            
+            # Make sure chains are not duplicated
+            if chain_idx not in chains:
+                chains[chain_idx] = len(chains)
 
             # Make sure residues are not duplicated
             if residue_idx not in residues:
@@ -63,11 +70,11 @@ def process_arpeggio_out(dirname, pdb_id):
 
                 # Generate the membership array and atom identity list
                 membership.append((residues[residue_idx], atoms[atom_idx]))
-                atom_ids.append(int(atom))
+                atom_ids.append((chains[chain_idx], residues[residue_idx], atoms[atom_idx], int(atom)))
 
     contacts = []
 
-    with open(contacts_file, 'r') as handle:    
+    with open(contacts_file, 'r') as handle:
         for line in handle.readlines():
             split_line = line.strip().split()
             i = '/'.join(split_line[0].split('/')[:3])
@@ -135,38 +142,49 @@ def create_target(contacts, memberships, device):
 
 if __name__ == '__main__':
     
-    h5file = h5py.File('./data/contacts.hdf5', 'w')
+    h5file = h5py.File('./data/contacts.hdf5', 'a')
     
-    atomtypes_group = h5file.create_group('atomtypes')
-    memberships_group = h5file.create_group('memberships')
-    contacts_group = h5file.create_group('contacts')
-    adjacency_group = h5file.create_group('adjacency')
-    target_group = h5file.create_group('target')
+    if 'atomtypes' not in h5file:
+        atomtypes_group = h5file.create_group('atomtypes')
+        memberships_group = h5file.create_group('memberships')
+        contacts_group = h5file.create_group('contacts')
+        adjacency_group = h5file.create_group('adjacency')
+        target_group = h5file.create_group('target')
+        
+    else:
+        atomtypes_group = h5file['atomtypes']
+        memberships_group = h5file['memberships']
+        contacts_group = h5file['contacts']
+        adjacency_group = h5file['adjacency']
+        target_group = h5file['target']
     
     with open(sys.argv[1], 'r') as handle:
         accessions = [acc.strip().lower() for acc in handle.readlines()]
         
     for entry in tqdm(accessions):
         
-        atomtypes, memberships, contacts = process_arpeggio_out('./data', entry)
+        if entry not in atomtypes_group.keys():
+            print('Adding {}'.format(entry))
         
-        atomtypes_group.create_dataset(entry, data=atomtypes, compression='gzip', compression_opts=9)
-        memberships_group.create_dataset(entry, data=memberships, compression='gzip', compression_opts=9)
-        contacts_group.create_dataset(entry, data=contacts, compression='gzip', compression_opts=9)
-        
-        # Get the 'memberships' and 'contacts' dense matrices 
-        memberships = make_sparse_mem_mat(memberships).to_dense()
-        contacts = make_sparse_contact_mat(contacts, len(atomtypes)).to_dense()
+            atomtypes, memberships, contacts = process_arpeggio_out('./data', entry)
 
-        # Extract the covalent bonds between all atoms in the structure
-        covalent = contacts[:, :, cont_chan['covalent']]
-        adjacency = create_adj(covalent)
-        
-        # Extract the contact maps for training
-        contacts = contacts[:, :, cont_chan['vdw']:]
-        target = create_target(contacts, memberships, device)
-        
-        adjacency_group.create_dataset(entry, data=adjacency, compression='gzip', compression_opts=9)
-        target_group.create_dataset(entry, data=target, compression='gzip', compression_opts=9)
+            atomtypes_group.create_dataset(entry, data=atomtypes, compression='gzip', compression_opts=9)
+            memberships_group.create_dataset(entry, data=memberships, compression='gzip', compression_opts=9)
+            contacts_group.create_dataset(entry, data=contacts, compression='gzip', compression_opts=9)
+
+            # Get the 'memberships' and 'contacts' dense matrices 
+            memberships = make_sparse_mem_mat(memberships).to_dense()
+            contacts = make_sparse_contact_mat(contacts, len(atomtypes)).to_dense()
+
+            # Extract the covalent bonds between all atoms in the structure
+            covalent = contacts[:, :, cont_chan['covalent']]
+            adjacency = create_adj(covalent)
+
+            # Extract the contact maps for training
+            contacts = contacts[:, :, cont_chan['vdw']:]
+            target = create_target(contacts, memberships, device)
+
+            adjacency_group.create_dataset(entry, data=adjacency, compression='gzip', compression_opts=9)
+            target_group.create_dataset(entry, data=target, compression='gzip', compression_opts=9)
         
     h5file.close()
