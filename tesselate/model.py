@@ -40,12 +40,12 @@ class Network(nn.Module):
         
         self.ggn = GGNUnit(input_size).to(device0)
         
-        self.conv1 = nn.Conv2d(input_size, 10, 3, stride=1, padding=1).to(device1)
-        self.conv2 = nn.Conv2d(10, 10, 3, stride=1, padding=1).to(device1)
-        self.conv3 = nn.Conv2d(10, 10, 3, stride=1, padding=1).to(device1)
-        self.conv4 = nn.Conv2d(10, 10, 3, stride=1, padding=1).to(device1)
-        self.conv5 = nn.Conv2d(10, 10, 3, stride=1, padding=1).to(device1)
-        self.conv6 = nn.Conv2d(10, 12, 3, stride=1, padding=1).to(device1)
+        self.conv1 = nn.Conv2d(input_size, 50, 3, stride=1, padding=1).to(device1)
+        self.conv2 = nn.Conv2d(50, 25, 3, stride=1, padding=1).to(device1)
+        self.conv3 = nn.Conv2d(25, 25, 3, stride=1, padding=1).to(device1)
+        self.conv4 = nn.Conv2d(25, 25, 3, stride=1, padding=1).to(device1)
+        self.conv5 = nn.Conv2d(25, 25, 3, stride=1, padding=1).to(device1)
+        self.conv6 = nn.Conv2d(25, 12, 3, stride=1, padding=1).to(device1)
         
         
     def forward(self, adjacency, atoms, membership):
@@ -68,7 +68,7 @@ class Network(nn.Module):
         h_final = (torch.add(h_final, h_final.transpose(0, 1)) / 2).view(1, self.input_size, int(orig_dim[0]), int(orig_dim[0]))
         
         end = time.time()
-        print('\nGraph conv: {}'.format(end - start))
+#         print('\nGraph conv: {}'.format(end - start))
         start = time.time()
         
         h_final = h_final.to(self.device1)
@@ -88,7 +88,7 @@ class Network(nn.Module):
         out = torch.sigmoid(torch.add(out, out.transpose(1, 2)) / 2)
         
         end = time.time()
-        print('2D conv: {}'.format(end - start))
+#         print('2D conv: {}'.format(end - start))
         
         return out
     
