@@ -4,6 +4,7 @@ import h5py
 import sys
 import torch
 from tqdm import *
+import glob
 
 if torch.cuda.is_available():
     device = torch.device('cuda:0')
@@ -34,19 +35,25 @@ cont_chan = {btype: chan_num for chan_num, btype in enumerate(cont_chan)}
 
 def process_arpeggio_out(dirname, pdb_id):
 
+    # Convert to lowercase for consistency
     pdb_id = pdb_id.lower()
     
+    # Get the paths to atomtypes and contacts files
     atomtype_file = os.path.join(dirname, pdb_id + '.atomtypes')
     contacts_file = os.path.join(dirname, pdb_id + '.contacts')
     
+    # Make empty dicts for chains residues and atoms
     chains = {}
     residues = {}
     atoms = {}
     
+    # Placeholders for the memberships and atom_ids arrays
     membership = []
     atom_ids = []
 
     with open(atomtype_file, 'r') as handle:
+        
+        # Loop through lines
         for line in handle.readlines():
 
             # Handle indices
@@ -79,29 +86,27 @@ def process_arpeggio_out(dirname, pdb_id):
             split_line = line.strip().split()
             i = '/'.join(split_line[0].split('/')[:3])
             j = '/'.join(split_line[1].split('/')[:3])
-            spectrum = int(''.join(split_line[2:]), 2)
-            contacts.append([atoms[i], atoms[j], spectrum])
+            spectrum = [int(k) for k in split_line[2:]]
+            for channel, val in enumerate(spectrum):
+                if val == 1:
+                    contacts.append([atoms[i], atoms[j], channel])
             
     return (np.array(atom_ids), np.array(membership), np.array(contacts))
 
 
 def make_sparse_mem_mat(idx_mat):
+    idx_mat = idx_mat.astype(np.int)
+    
     idx = torch.from_numpy(idx_mat)
     val = torch.ones(len(idx))
-    out_mat = torch.sparse.FloatTensor(idx.t(), val, torch.Size([torch.max(idx[:, 0]) + 1, torch.max(idx[:, 1]) + 1]))
+    
+    out_mat = torch.sparse.FloatTensor(idx.t(), val, torch.Size([int(torch.max(idx[:, 0])) + 1, int(torch.max(idx[:, 1])) + 1]))
     return(out_mat)
 
 
 def make_sparse_contact_mat(contacts_mat, atom_count):
-    full_contacts_mat = []
-    for i in range(len(contacts_mat)):
-        expanded_conts = [idx for idx, cont in enumerate(bin(contacts_mat[i, 2])[2:].zfill(15)) if cont == '1']
-        full_contacts_mat.extend([[contacts_mat[i, 0], contacts_mat[i, 1], expanded_conts[j]] for j in range(len(expanded_conts))])
-        full_contacts_mat.extend([[contacts_mat[i, 1], contacts_mat[i, 0], expanded_conts[j]] for j in range(len(expanded_conts))])
-    
-    full_contacts_mat = np.array(full_contacts_mat)
-    
-    idx = torch.from_numpy(full_contacts_mat)
+    contacts_mat = contacts_mat.astype(np.int)
+    idx = torch.from_numpy(contacts_mat)
     val = torch.ones(len(idx))
     out_mat = torch.sparse.FloatTensor(idx.t(), val, torch.Size([atom_count, atom_count, 15]))
     return(out_mat)
@@ -138,6 +143,12 @@ def create_target(contacts, memberships, device):
     target = torch.stack(targets, dim=0)
     
     return target
+
+
+def extract_sparse(sparse_mat):
+    indices = sparse_mat._indices().t().numpy()
+    values = sparse_mat._values().numpy()
+    return(np.column_stack((indices, values)))
     
 
 if __name__ == '__main__':
@@ -158,31 +169,52 @@ if __name__ == '__main__':
         adjacency_group = h5file['adjacency']
         target_group = h5file['target']
     
-    with open(sys.argv[1], 'r') as handle:
+    proc_target = sys.argv[1]
+    
+    if os.path.isdir(proc_target):
+        atomtype_files = [i.replace('.atomtypes', '') for i in glob.glob('*.atomtypes')]
+        contact_files = [i.replace('.contacts', '') for i in glob.glob('*.contacts')]
+        accessions = [i for i in atomtype_files if i in contact_files]
+        
         accessions = [acc.strip().lower() for acc in handle.readlines()]
+        
+    elif os.path.isfile(proc_target):
+        with open(sys.argv[1], 'r') as handle:
+            accessions = [acc.strip().lower() for acc in handle.readlines()]
+            
+    else:
+        raise(ValueError('Invalid target: `{}` file or directory not found.'.format(proc_target)))
         
     for entry in tqdm(accessions):
         
         if entry not in atomtypes_group.keys():
-            print('Adding {}'.format(entry))
+            tqdm.write('Adding {}'.format(entry))
         
             atomtypes, memberships, contacts = process_arpeggio_out('./data', entry)
+            
+            atomtypes = atomtypes[:, -1].astype(np.uint8)
+            memberships = memberships.astype(np.uint32)
+            contacts = contacts.astype(np.uint32)
 
             atomtypes_group.create_dataset(entry, data=atomtypes, compression='gzip', compression_opts=9)
             memberships_group.create_dataset(entry, data=memberships, compression='gzip', compression_opts=9)
             contacts_group.create_dataset(entry, data=contacts, compression='gzip', compression_opts=9)
 
-            # Get the 'memberships' and 'contacts' dense matrices 
-            memberships = make_sparse_mem_mat(memberships).to_dense()
-            contacts = make_sparse_contact_mat(contacts, len(atomtypes)).to_dense()
+            # Get the 'memberships' and 'contacts' sparse matrices 
+            memberships = make_sparse_mem_mat(memberships)
+            contacts = make_sparse_contact_mat(contacts, len(atomtypes))
 
             # Extract the covalent bonds between all atoms in the structure
-            covalent = contacts[:, :, cont_chan['covalent']]
-            adjacency = create_adj(covalent)
+            covalent = contacts.to_dense()[:, :, cont_chan['covalent']].squeeze()
+            adjacency = create_adj(covalent).to_sparse()
 
             # Extract the contact maps for training
-            contacts = contacts[:, :, cont_chan['vdw']:]
-            target = create_target(contacts, memberships, device)
+            contacts = contacts.to_dense()[:, :, cont_chan['vdw']:]
+            memberships = memberships.to_dense()
+            target = create_target(contacts, memberships, device).to_sparse()
+            
+            adjacency = extract_sparse(adjacency).astype(np.float16)
+            target = extract_sparse(target)[:, :3].astype(np.uint32)
 
             adjacency_group.create_dataset(entry, data=adjacency, compression='gzip', compression_opts=9)
             target_group.create_dataset(entry, data=target, compression='gzip', compression_opts=9)
