@@ -25,25 +25,42 @@ cont_chan = (
 
 cont_chan = {btype: chan_num for chan_num, btype in enumerate(cont_chan)}
 
-def make_sparse_mem_mat(idx_mat):
+
+def torch_idx(idx_mat):
+    idx_mat = idx_mat.astype(np.int)
     idx = torch.from_numpy(idx_mat)
-    val = torch.ones(len(idx))
-    out_mat = torch.sparse.FloatTensor(idx.t(), val, torch.Size([torch.max(idx[:, 0]) + 1, torch.max(idx[:, 1]) + 1]))
-    return(out_mat)
+    return idx
 
 
-def make_sparse_contact_mat(contacts_mat, atom_count):
-    full_contacts_mat = []
-    for i in range(len(contacts_mat)):
-        expanded_conts = [idx for idx, cont in enumerate(bin(contacts_mat[i, 2])[2:].zfill(15)) if cont == '1']
-        full_contacts_mat.extend([[contacts_mat[i, 0], contacts_mat[i, 1], expanded_conts[j]] for j in range(len(expanded_conts))])
-        full_contacts_mat.extend([[contacts_mat[i, 1], contacts_mat[i, 0], expanded_conts[j]] for j in range(len(expanded_conts))])
+def make_sparse_mat(idx_mat, mat_type, count=None):
+    """
+    Args:
+    - id_mat (ndarray) - Numpy array containing the sparse matrix.
+        All coordinates assumed to have value = 1 unless type is 'adj'
+    - mat_type (str) - string indicating matrix type, one of ['mem', 'con', 'adj', 'tar']
+    """
     
-    full_contacts_mat = np.array(full_contacts_mat)
+    if mat_type not in ['mem', 'con', 'adj', 'tar']:
+        raise(ValueError('`mat_type` = {}, unrecognized mat_type.'.format(mat_type)))
     
-    idx = torch.from_numpy(full_contacts_mat)
-    val = torch.ones(len(idx))
-    out_mat = torch.sparse.FloatTensor(idx.t(), val, torch.Size([atom_count, atom_count, 15]))
+    if mat_type == 'adj':
+        idx = torch_idx(idx_mat[:, :2])
+        val = torch.from_numpy(idx_mat[:, 2])
+        size = torch.Size([int(torch.max(idx)) + 1, int(torch.max(idx)) + 1])
+    else:
+        idx = torch_idx(idx_mat)
+        val = torch.ones(len(idx))
+        
+        if mat_type =='mem':
+            size = torch.Size([int(torch.max(idx[:, 0])) + 1, int(torch.max(idx[:, 1])) + 1])
+        elif mat_type == 'con':
+            size = torch.Size([count, count, 15])
+        elif mat_type == 'tar':
+            size = torch.Size([count, count, 12])
+        else:
+            raise()
+        
+    out_mat = torch.sparse.FloatTensor(idx.t(), val, size)
     return(out_mat)
 
 

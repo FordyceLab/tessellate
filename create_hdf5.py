@@ -5,6 +5,7 @@ import sys
 import torch
 from tqdm import *
 import glob
+from tesselate.data import make_sparse_mat
 
 if torch.cuda.is_available():
     device = torch.device('cuda:0')
@@ -79,10 +80,16 @@ def process_arpeggio_out(dirname, pdb_id):
                 membership.append((residues[residue_idx], atoms[atom_idx]))
                 atom_ids.append((chains[chain_idx], residues[residue_idx], atoms[atom_idx], int(atom)))
 
+    # Create empty list to hold contact info
     contacts = []
 
+    # Open the contacts file
     with open(contacts_file, 'r') as handle:
+        
+        # Loop through lines
         for line in handle.readlines():
+            
+            # Split into partner 1, partner 2, contact
             split_line = line.strip().split()
             i = '/'.join(split_line[0].split('/')[:3])
             j = '/'.join(split_line[1].split('/')[:3])
@@ -94,22 +101,22 @@ def process_arpeggio_out(dirname, pdb_id):
     return (np.array(atom_ids), np.array(membership), np.array(contacts))
 
 
-def make_sparse_mem_mat(idx_mat):
-    idx_mat = idx_mat.astype(np.int)
+# def make_sparse_mem_mat(idx_mat):
+#     idx_mat = idx_mat.astype(np.int)
     
-    idx = torch.from_numpy(idx_mat)
-    val = torch.ones(len(idx))
+#     idx = torch.from_numpy(idx_mat)
+#     val = torch.ones(len(idx))
     
-    out_mat = torch.sparse.FloatTensor(idx.t(), val, torch.Size([int(torch.max(idx[:, 0])) + 1, int(torch.max(idx[:, 1])) + 1]))
-    return(out_mat)
+#     out_mat = torch.sparse.FloatTensor(idx.t(), val, torch.Size([int(torch.max(idx[:, 0])) + 1, int(torch.max(idx[:, 1])) + 1]))
+#     return(out_mat)
 
 
-def make_sparse_contact_mat(contacts_mat, atom_count):
-    contacts_mat = contacts_mat.astype(np.int)
-    idx = torch.from_numpy(contacts_mat)
-    val = torch.ones(len(idx))
-    out_mat = torch.sparse.FloatTensor(idx.t(), val, torch.Size([atom_count, atom_count, 15]))
-    return(out_mat)
+# def make_sparse_contact_mat(contacts_mat, atom_count):
+#     contacts_mat = contacts_mat.astype(np.int)
+#     idx = torch.from_numpy(contacts_mat)
+#     val = torch.ones(len(idx))
+#     out_mat = torch.sparse.FloatTensor(idx.t(), val, torch.Size([atom_count, atom_count, 15]))
+#     return(out_mat)
 
 
 def create_adj(covalent):
@@ -201,8 +208,8 @@ if __name__ == '__main__':
             contacts_group.create_dataset(entry, data=contacts, compression='gzip', compression_opts=9)
 
             # Get the 'memberships' and 'contacts' sparse matrices 
-            memberships = make_sparse_mem_mat(memberships)
-            contacts = make_sparse_contact_mat(contacts, len(atomtypes))
+            memberships = make_sparse_mat(memberships, 'mem')
+            contacts = make_sparse_mat(contacts, 'con', count=len(atomtypes))
 
             # Extract the covalent bonds between all atoms in the structure
             covalent = contacts.to_dense()[:, :, cont_chan['covalent']].squeeze()
