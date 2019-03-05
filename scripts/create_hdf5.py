@@ -97,26 +97,10 @@ def process_arpeggio_out(dirname, pdb_id):
             for channel, val in enumerate(spectrum):
                 if val == 1:
                     contacts.append([atoms[i], atoms[j], channel])
+                    if atoms[i] != atoms[j]:
+                        contacts.append([atoms[j], atoms[i], channel])
             
     return (np.array(atom_ids), np.array(membership), np.array(contacts))
-
-
-# def make_sparse_mem_mat(idx_mat):
-#     idx_mat = idx_mat.astype(np.int)
-    
-#     idx = torch.from_numpy(idx_mat)
-#     val = torch.ones(len(idx))
-    
-#     out_mat = torch.sparse.FloatTensor(idx.t(), val, torch.Size([int(torch.max(idx[:, 0])) + 1, int(torch.max(idx[:, 1])) + 1]))
-#     return(out_mat)
-
-
-# def make_sparse_contact_mat(contacts_mat, atom_count):
-#     contacts_mat = contacts_mat.astype(np.int)
-#     idx = torch.from_numpy(contacts_mat)
-#     val = torch.ones(len(idx))
-#     out_mat = torch.sparse.FloatTensor(idx.t(), val, torch.Size([atom_count, atom_count, 15]))
-#     return(out_mat)
 
 
 def create_adj(covalent):
@@ -160,24 +144,13 @@ def extract_sparse(sparse_mat):
 
 if __name__ == '__main__':
     
+    # Open up the HDF5 file
     h5file = h5py.File('./data/contacts.hdf5', 'a')
     
-    if 'atomtypes' not in h5file:
-        atomtypes_group = h5file.create_group('atomtypes')
-        memberships_group = h5file.create_group('memberships')
-        contacts_group = h5file.create_group('contacts')
-        adjacency_group = h5file.create_group('adjacency')
-        target_group = h5file.create_group('target')
-        
-    else:
-        atomtypes_group = h5file['atomtypes']
-        memberships_group = h5file['memberships']
-        contacts_group = h5file['contacts']
-        adjacency_group = h5file['adjacency']
-        target_group = h5file['target']
-    
+    # Read in the target list to be processed
     proc_target = sys.argv[1]
     
+    # Get all possible targets from directory if proc_target is directory
     if os.path.isdir(proc_target):
         atomtype_files = [i.replace('.atomtypes', '') for i in glob.glob('*.atomtypes')]
         contact_files = [i.replace('.contacts', '') for i in glob.glob('*.contacts')]
@@ -185,27 +158,31 @@ if __name__ == '__main__':
         
         accessions = [acc.strip().lower() for acc in handle.readlines()]
         
+    # Read in the text list of targets if proc_target is file
     elif os.path.isfile(proc_target):
         with open(sys.argv[1], 'r') as handle:
             accessions = [acc.strip().lower() for acc in handle.readlines()]
             
     else:
         raise(ValueError('Invalid target: `{}` file or directory not found.'.format(proc_target)))
-        
+    
+    # Loop through the accession numbers
     for entry in tqdm(accessions):
         
-        if entry not in atomtypes_group.keys():
+        if entry not in h5file:
+            entry_group = h5file.create_group(entry)
+            
             tqdm.write('Adding {}'.format(entry))
         
             atomtypes, memberships, contacts = process_arpeggio_out('./data', entry)
             
-            atomtypes = atomtypes[:, -1].astype(np.uint8)
+            atomtypes = atomtypes.astype(np.uint32)
             memberships = memberships.astype(np.uint32)
             contacts = contacts.astype(np.uint32)
-
-            atomtypes_group.create_dataset(entry, data=atomtypes, compression='gzip', compression_opts=9)
-            memberships_group.create_dataset(entry, data=memberships, compression='gzip', compression_opts=9)
-            contacts_group.create_dataset(entry, data=contacts, compression='gzip', compression_opts=9)
+            
+            entry_group.create_dataset('atomtypes', data=atomtypes, compression='gzip', compression_opts=9)
+            entry_group.create_dataset('memberships', data=memberships, compression='gzip', compression_opts=9)
+            entry_group.create_dataset('contacts', data=contacts, compression='gzip', compression_opts=9)
 
             # Get the 'memberships' and 'contacts' sparse matrices 
             memberships = make_sparse_mat(memberships, 'mem')
@@ -220,10 +197,10 @@ if __name__ == '__main__':
             memberships = memberships.to_dense()
             target = create_target(contacts, memberships, device).to_sparse()
             
-            adjacency = extract_sparse(adjacency).astype(np.float16)
+            adjacency = extract_sparse(adjacency).astype(np.float32)
             target = extract_sparse(target)[:, :3].astype(np.uint32)
 
-            adjacency_group.create_dataset(entry, data=adjacency, compression='gzip', compression_opts=9)
-            target_group.create_dataset(entry, data=target, compression='gzip', compression_opts=9)
+            entry_group.create_dataset('adjacency', data=adjacency, compression='gzip', compression_opts=9)
+            entry_group.create_dataset('target', data=target, compression='gzip', compression_opts=9)
         
     h5file.close()

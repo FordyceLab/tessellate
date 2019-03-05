@@ -39,6 +39,8 @@ if __name__ == '__main__':
     pdb_lookup.iloc[:, 0] = [i.split()[0] for i in pdb_lookup.iloc[:, 0]]
     pdb_lookup.dropna(inplace=True)
     
+    pdb_lookup = pdb_lookup.iloc[:, 1]
+    
     # Export to tsv
     pdb_lookup.to_csv(out_file, sep='\t', header=False, index=False)
     
