@@ -45,7 +45,7 @@ def make_sparse_mat(idx_mat, mat_type, count=None):
     
     if mat_type == 'adj':
         idx = torch_idx(idx_mat[:, :2])
-        val = torch.from_numpy(idx_mat[:, 2])
+        val = torch.from_numpy(idx_mat[:, 2].astype(np.float))
         size = torch.Size([int(torch.max(idx)) + 1, int(torch.max(idx)) + 1])
     else:
         idx = torch_idx(idx_mat)
@@ -56,7 +56,7 @@ def make_sparse_mat(idx_mat, mat_type, count=None):
         elif mat_type == 'con':
             size = torch.Size([count, count, 15])
         elif mat_type == 'tar':
-            size = torch.Size([count, count, 12])
+            size = torch.Size([12, count, count, ])
         else:
             raise()
         
@@ -169,66 +169,66 @@ class TesselateDataset(Dataset):
             return self.in_memory[entry]
         
         ###################
-        else:
+#         else:
         
-            with h5py.File(self.hdf5_dataset, 'r') as h5file:
+        with h5py.File(self.hdf5_dataset, 'r') as h5file:
 
-                # Read the data from the HDF5 file
-                atomtypes = h5file['atomtypes'][entry][:]
-                memberships = h5file['memberships'][entry][:]
-                adjacency = h5file['adjacency'][entry][:]
-                target = h5file['target'][entry][:]
+            # Read the data from the HDF5 file
+            atomtypes = h5file['atomtypes'][entry][:]
+            memberships = h5file['memberships'][entry][:]
+            adjacency = h5file['adjacency'][entry][:]
+            target = h5file['target'][entry][:]
 
-            memberships = make_sparse_mem_mat(memberships).to_dense().numpy()
+        memberships = make_sparse_mem_mat(memberships).to_dense().numpy()
 
-            unique_chains = np.unique(atomtypes[:, 0])
+        unique_chains = np.unique(atomtypes[:, 0])
 
-            chain_combos = []
+        chain_combos = []
 
-            entry_list = []
-            atomtype_list = []
-            membership_list = []
-            adjacency_list = []
-            target_list = []
+        entry_list = []
+        atomtype_list = []
+        membership_list = []
+        adjacency_list = []
+        target_list = []
 
-            if self.feed_method == 'complete':
-                entry_list.append(entry)
-                atomtype_list.append(atomtypes)
-                membership_list.append(memberships)
-                adjacency_list.append(adjacency)
-                target_list.append(target)
+        if self.feed_method == 'complete':
+            entry_list.append(entry)
+            atomtype_list.append(atomtypes)
+            membership_list.append(memberships)
+            adjacency_list.append(adjacency)
+            target_list.append(target)
+
+        else:
+
+            if self.feed_method == 'single_chain':
+                for chain in unique_chains:
+                    chain_combos.append([chain])
+
+            elif self.feed_method == 'pairwise':
+                chain_combos.extend(combinations(unique_chains, 2))
 
             else:
+                raise(ValueError('Unknown feed method "{}".'.format(self.feed_method)))
 
-                if self.feed_method == 'single_chain':
-                    for chain in unique_chains:
-                        chain_combos.append([chain])
+            for chains in chain_combos:
+                selection = select_chains(atomtypes, memberships, adjacency, target, chains)
 
-                elif self.feed_method == 'pairwise':
-                    chain_combos.extend(combinations(unique_chains, 2))
+                entry_list.append('{}_'.format(entry, '_'.join([str(i) for i in chains])))
+                atomtype_list.append(selection[0])
+                membership_list.append(selection[1])
+                adjacency_list.append(selection[2])
+                target_list.append(selection[3])
 
-                else:
-                    raise(ValueError('Unknown feed method "{}".'.format(self.feed_method)))
+        data_dict = {
+            'id': entry_list,
+            'atomtypes': [torch.from_numpy(i) for i in atomtype_list],
+            'memberships': [torch.from_numpy(i) for i in membership_list],
+            'adjacency': [torch.from_numpy(i) for i in adjacency_list],
+            'target': [torch.from_numpy(i) for i in target_list]
+        }
 
-                for chains in chain_combos:
-                    selection = select_chains(atomtypes, memberships, adjacency, target, chains)
+        self.in_memory[entry] = data_dict
 
-                    entry_list.append('{}_'.format(entry, '_'.join([str(i) for i in chains])))
-                    atomtype_list.append(selection[0])
-                    membership_list.append(selection[1])
-                    adjacency_list.append(selection[2])
-                    target_list.append(selection[3])
-                    
-            data_dict = {
-                'id': entry_list,
-                'atomtypes': [torch.from_numpy(i) for i in atomtype_list],
-                'memberships': [torch.from_numpy(i) for i in membership_list],
-                'adjacency': [torch.from_numpy(i) for i in adjacency_list],
-                'target': [torch.from_numpy(i) for i in target_list]
-            }
-            
-            self.in_memory[entry] = data_dict
-
-            # Return the data for training
-            return data_dict
+        # Return the data for training
+        return data_dict
     #########################
