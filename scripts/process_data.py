@@ -27,17 +27,15 @@ if __name__ == '__main__':
     with open(sys.argv[1], 'r') as handle:
         pdb_ids = [acc.strip().lower() for acc in handle.readlines()]
     
-    pool = ThreadPoolExecutor(30)
+    pool = ThreadPoolExecutor(35)
     
     futures = []
     
+    contacts = glob.glob('data/*.contacts')
+    atomtypes = glob.glob('data/*.atomtypes')
+    
     for pdb in tqdm(pdb_ids):
-        contacts = glob.glob('data/*.contacts')
-        atomtypes = glob.glob('data/*.atomtypes')
-        
         if 'data/{}.contacts'.format(pdb) not in contacts or 'data/{}.atomtypes'.format(pdb) not in atomtypes:
-            
-            
             futures.append(pool.submit(process, (pdb)))
          
     n_complete = [future.done() for future in futures]
