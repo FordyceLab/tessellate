@@ -1,3 +1,7 @@
+#############
+# Variables #
+#############
+
 PN_PARENT_DIR  = '/shared_data/protein_structure'
 LOCAL_DATA_DIR = 'data'
 ID_LIST_DIR = 'id_lists'
@@ -8,6 +12,10 @@ COMPS = [11, 12]
 TYPE_KEY_DICT = {'x_ray': 'diffraction', 'nmr': 'NMR', 'cryo_em': 'EM'}
 
 
+###############################
+# Process ProteinNet ID lists #
+###############################
+
 # Process all complete IDs for a given competition
 rule process_PN_ID_lists:
     input:
@@ -16,7 +24,7 @@ rule process_PN_ID_lists:
     
 
 # Clean up the id list directory
-rule clean:
+rule clean_ID_lists:
     shell:
         'rm -r {ID_LIST_DIR}'
     
@@ -84,3 +92,17 @@ rule parse_structure_type:
         type_key = lambda wildcards: TYPE_KEY_DICT[wildcards.type]
     shell:
         'grep {params.type_key} {input} | cut -f1 > {output}'
+
+
+#######################
+# Sync local PDB copy #
+#######################
+
+rule sync_PDB:
+    shell:
+        'bash rsyncPDB.sh'
+
+
+###############################
+# Clean and process PDB files #
+###############################
