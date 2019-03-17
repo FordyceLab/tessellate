@@ -7,3 +7,7 @@
 # Data directory
 /data
 
+# Add other directories
+.snakemake
+.ipynb_checkpoints
+pdbtools
