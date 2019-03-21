@@ -1,3 +1,5 @@
+from snake_helper import read_targets
+
 #############
 # Variables #
 #############
@@ -7,9 +9,49 @@ LOCAL_DATA_DIR = 'data'
 ID_LIST_DIR = 'id_lists'
 
 ALL_IDS = ['training_{}'.format(thres) for thres in [30, 50, 70, 90, 95, 100]] + ['validation', 'testing']
-TYPES = ['complete', 'x_ray', 'nmr', 'cryo_em']
+TYPES = ['x_ray', 'nmr', 'cryo_em']
 COMPS = [11, 12]
 TYPE_KEY_DICT = {'x_ray': 'diffraction', 'nmr': 'NMR', 'cryo_em': 'EM'}
+
+if 'list' in config:
+    PROC_TARGETS = [acc.strip() for acc in open(config['list'], 'r').readlines()]
+else:
+    PROC_TARGETS = []
+    
+shell.executable('bash')
+
+###############################
+# Clean and process PDB files #
+###############################
+
+rule process_PDB_list:
+    input:
+        expand(LOCAL_DATA_DIR + '/processed/{pdb_id}.atomtypes',
+               pdb_id=PROC_TARGETS),
+        expand(LOCAL_DATA_DIR + '/processed/{pdb_id}.contacts',
+               pdb_id=PROC_TARGETS)
+               
+rule process_PDB_file:
+    input:
+        LOCAL_DATA_DIR + '/cleaned/{pdb_id}.pdb'
+    output:
+        LOCAL_DATA_DIR + '/processed/{pdb_id}.atomtypes',
+        LOCAL_DATA_DIR + '/processed/{pdb_id}.contacts'
+    shell:
+        'docker run -v $(pwd)/{LOCAL_DATA_DIR}/cleaned:/data_in \
+            -v $(pwd)/{LOCAL_DATA_DIR}/processed:/data_out \
+            -u $(id -u ${{USER}}):$(id -g ${{USER}}) \
+            tcs_arpeggio:latest \
+            python /arpeggio/arpeggio.py -v -od /data_out /data_in/{wildcards.pdb_id}.pdb'
+            
+rule clean_PDB_file:
+    input:
+        PN_PARENT_DIR + '/PDB/pdb/pdb{pdb_id}.ent.gz'
+    output:
+        LOCAL_DATA_DIR + '/cleaned/{pdb_id}.pdb'
+    shell:
+        'python scripts/pdbtools/clean_pdb.py\
+            -O {LOCAL_DATA_DIR}/cleaned -rmw {input}'
 
 
 ###############################
@@ -20,7 +62,7 @@ TYPE_KEY_DICT = {'x_ray': 'diffraction', 'nmr': 'NMR', 'cryo_em': 'EM'}
 rule process_PN_ID_lists:
     input:
         expand(ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number}/{type}/{dataset}_ids.txt',
-               comp_number = COMPS, type=TYPES, dataset=ALL_IDS)
+               comp_number=COMPS, type=TYPES, dataset=ALL_IDS)
     
 
 # Clean up the id list directory
@@ -33,7 +75,6 @@ rule clean_ID_lists:
 rule download_ProteinNet:
     output:
         directory(PN_PARENT_DIR + '/ProteinNet_CASP{comp_number}')
-        
     shell:
         'wget -O - "https://sharehost.hms.harvard.edu/sysbio/alquraishi/proteinnet/human_readable/casp{wildcards.comp_number}.tar.gz" | tar xzf - -C /shared_data/protein_structure/ProteinNet_CASP{wildcards.comp_number} --strip-components 1'
         
@@ -43,7 +84,7 @@ rule process_PN_training_sets:
     input:
         PN_PARENT_DIR + '/ProteinNet_CASP{comp_number}'
     output:
-        ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number,\d+}/complete/training_{threshold,\d+}_ids.txt'
+        ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number,\d+}/complete/all/training_{threshold,\d+}_ids.txt'
     shell:
         'cat {input}/training_{wildcards.threshold} | awk "/\[ID\]/{{getline; print}}" | sed "s/_/\t/g" | cut -f1 | tr "[:upper:]" "[:lower:]" > {output}'
         
@@ -53,7 +94,7 @@ rule process_PN_validation_set:
     input:
         PN_PARENT_DIR + '/ProteinNet_CASP{comp_number}'
     output:
-        ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number,\d+}/complete/validation_ids.txt'
+        ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number,\d+}/complete/all/validation_ids.txt'
     shell:
         'cat {input}/validation | awk "/\[ID\]/{{getline; print}}" | sed "s/#/\t/g" | sed "s/_/\t/g" | cut -f2 | tr "[:upper:]" "[:lower:]" > {output}'
 
@@ -61,14 +102,35 @@ rule process_PN_validation_set:
 # Process the ProteinNet testing ID data sets
 rule process_PN_testing_set:
     output:
-        ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number,\d+}/complete/testing_ids.txt'
+        ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number,\d+}/complete/all/testing_ids.txt'
     shell:
         'python scripts/convert_targets_to_pdb.py {wildcards.comp_number} {output}'
-        
+
+# Get current structures
+rule get_current_sturcture_list:
+    input:
+        PN_PARENT_DIR + '/PDB/pdb'
+    output:
+        ID_LIST_DIR + '/pdb_info/all_current_structures.txt'
+    shell:
+        'find {input} -type f -printf "%f\n" | sed "s/^pdb//g" | sed "s/\.ent\.gz//g" | sort > {output}'
+    
+
+# Filter all lists to only have current structures
+rule filter_current_structures:
+    input:
+        curr_file = ID_LIST_DIR + '/pdb_info/all_current_structures.txt',
+        ids = ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number}/complete/all/{in_file}.txt'
+    output:
+        ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number}/complete/current/{in_file}.txt'
+    shell:
+        'comm -12 <( cat {input.curr_file} ) <( sort {input.ids} ) > {output}'
+
+
 rule filter_type_structures:
     input:
         type_file = ID_LIST_DIR + '/pdb_info/{type}_structures.txt',
-        ids = ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number}/complete/{in_file}.txt'
+        ids = ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number}/complete/current/{in_file}.txt'
     output:
         ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number,\d+}/{type}/{in_file}.txt'
     shell:
@@ -99,10 +161,7 @@ rule parse_structure_type:
 #######################
 
 rule sync_PDB:
+    input:
+        PN_PARENT_DIR + '/PDB/pdb'
     shell:
         'bash rsyncPDB.sh'
-
-
-###############################
-# Clean and process PDB files #
-###############################
