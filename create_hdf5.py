@@ -145,18 +145,16 @@ def extract_sparse(sparse_mat):
 if __name__ == '__main__':
     
     # Open up the HDF5 file
-    h5file = h5py.File('./data/contacts.hdf5', 'a')
+    h5file = h5py.File('data/contacts.hdf5', 'a')
     
     # Read in the target list to be processed
     proc_target = sys.argv[1]
     
     # Get all possible targets from directory if proc_target is directory
     if os.path.isdir(proc_target):
-        atomtype_files = [i.replace('.atomtypes', '') for i in glob.glob('*.atomtypes')]
-        contact_files = [i.replace('.contacts', '') for i in glob.glob('*.contacts')]
+        atomtype_files = [os.path.basename(i).replace('.atomtypes', '') for i in glob.glob(os.path.join(proc_target, '*.atomtypes'))]
+        contact_files = [os.path.basename(i).replace('.contacts', '') for i in glob.glob(os.path.join(proc_target, '*.contacts'))]
         accessions = [i for i in atomtype_files if i in contact_files]
-        
-        accessions = [acc.strip().lower() for acc in handle.readlines()]
         
     # Read in the text list of targets if proc_target is file
     elif os.path.isfile(proc_target):
@@ -174,7 +172,7 @@ if __name__ == '__main__':
             
             tqdm.write('Adding {}'.format(entry))
         
-            atomtypes, memberships, contacts = process_arpeggio_out('./data', entry)
+            atomtypes, memberships, contacts = process_arpeggio_out('data/processed', entry)
             
             atomtypes = atomtypes.astype(np.uint32)
             memberships = memberships.astype(np.uint32)
