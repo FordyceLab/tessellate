@@ -37,10 +37,10 @@ def make_sparse_mat(idx_mat, mat_type, count=None):
     Args:
     - id_mat (ndarray) - Numpy array containing the sparse matrix.
         All coordinates assumed to have value = 1 unless type is 'adj'
-    - mat_type (str) - string indicating matrix type, one of ['mem', 'con', 'adj', 'tar']
+    - mat_type (str) - string indicating matrix type, one of ['mem', 'con', 'adj', 'tar', 'cov']
     """
     
-    if mat_type not in ['mem', 'con', 'adj', 'tar']:
+    if mat_type not in ['mem', 'con', 'adj', 'tar', 'cov']:
         raise(ValueError('`mat_type` = {}, unrecognized mat_type.'.format(mat_type)))
     
     if mat_type == 'adj':
@@ -56,7 +56,9 @@ def make_sparse_mat(idx_mat, mat_type, count=None):
         elif mat_type == 'con':
             size = torch.Size([count, count, 15])
         elif mat_type == 'tar':
-            size = torch.Size([12, count, count, ])
+            size = torch.Size([12, count, count])
+        elif mat_type == 'cov':
+            size = torch.Size([count, count])
         else:
             raise()
         
