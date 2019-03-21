@@ -6,12 +6,7 @@ import torch
 from tqdm import *
 import glob
 from tesselate.data import make_sparse_mat
-
-if torch.cuda.is_available():
-    device = torch.device('cuda:0')
-else:
-    device = torch.device('cpu')
-    
+from concurrent.futures import ThreadPoolExecutor
     
 cont_chan = (
     'clash',
@@ -33,7 +28,6 @@ cont_chan = (
 
 cont_chan = {btype: chan_num for chan_num, btype in enumerate(cont_chan)}
 
-
 def process_arpeggio_out(dirname, pdb_id):
 
     # Convert to lowercase for consistency
@@ -51,6 +45,9 @@ def process_arpeggio_out(dirname, pdb_id):
     # Placeholders for the memberships and atom_ids arrays
     membership = []
     atom_ids = []
+    
+    # Create membership dictionary
+    mem_dict = {}
 
     with open(atomtype_file, 'r') as handle:
         
@@ -79,9 +76,13 @@ def process_arpeggio_out(dirname, pdb_id):
                 # Generate the membership array and atom identity list
                 membership.append((residues[residue_idx], atoms[atom_idx]))
                 atom_ids.append((chains[chain_idx], residues[residue_idx], atoms[atom_idx], int(atom)))
+                
 
     # Create empty list to hold contact info
-    contacts = []
+    contacts = set()
+    covalent = set()
+    target = set()
+    
 
     # Open the contacts file
     with open(contacts_file, 'r') as handle:
@@ -91,16 +92,36 @@ def process_arpeggio_out(dirname, pdb_id):
             
             # Split into partner 1, partner 2, contact
             split_line = line.strip().split()
-            i = '/'.join(split_line[0].split('/')[:3])
-            j = '/'.join(split_line[1].split('/')[:3])
+            
+            atom_i = '/'.join(split_line[0].split('/')[:3])
+            atom_j = '/'.join(split_line[1].split('/')[:3])
+            
+            res_i = '/'.join(split_line[0].split('/')[:2])
+            res_j = '/'.join(split_line[1].split('/')[:2])
+            
             spectrum = [int(k) for k in split_line[2:]]
+            
+            atom_partner_1 = atoms[atom_i]
+            atom_partner_2 = atoms[atom_j]
+            
+            res_partner_1 = residues[res_i]
+            res_partner_2 = residues[res_j]
+            
             for channel, val in enumerate(spectrum):
                 if val == 1:
-                    contacts.append([atoms[i], atoms[j], channel])
-                    if atoms[i] != atoms[j]:
-                        contacts.append([atoms[j], atoms[i], channel])
-            
-    return (np.array(atom_ids), np.array(membership), np.array(contacts))
+                    contacts.add((atom_partner_1, atom_partner_2, channel))
+                    contacts.add((atom_partner_2, atom_partner_1, channel))
+                    
+                    if channel == cont_chan['covalent']:
+                        covalent.add((atom_partner_1, atom_partner_2))
+                        covalent.add((atom_partner_2, atom_partner_1))
+                        
+                    if channel >= cont_chan['vdw']:
+                        target.add((res_partner_1, res_partner_2, channel))
+                        target.add((res_partner_1, res_partner_2, channel))
+                        
+    return (np.array(atom_ids), np.array(membership), np.array(list(contacts)),
+            np.array(list(target)), np.array(list(covalent)))
 
 
 def create_adj(covalent):
@@ -110,39 +131,62 @@ def create_adj(covalent):
     D_hat = torch.zeros_like(C_hat)
     n = D_hat.shape[0]
     D_hat[range(n), range(n)] = diag
+    
+    D_hat_sparse = D_hat.to_sparse()
 
-    adjacency = D_hat.mm(C_hat).mm(D_hat)
+    adjacency = D_hat_sparse.mm(C_hat).to_sparse().mm(D_hat).to_sparse()
     
     return adjacency
-
-
-def create_target(contacts, memberships, device):
-    # Transfer everything to the GPU for faster processing
-    memberships = memberships.to(device)
-
-    targets = []
-    
-    # Calculate the targets
-    for i in range(contacts.shape[2]):
-        contact = contacts[:, :, i].squeeze().to(device)
-        
-        targets.append((memberships
-                        .mm(contact)
-                        .mm(memberships.transpose(0, 1)) > 0)
-                       .float().cpu())
-    
-    target = torch.stack(targets, dim=0)
-    
-    return target
 
 
 def extract_sparse(sparse_mat):
     indices = sparse_mat._indices().t().numpy()
     values = sparse_mat._values().numpy()
     return(np.column_stack((indices, values)))
+
+
+def process(entry):        
+    atomtypes, memberships, contacts, target, covalent = process_arpeggio_out('data/processed', entry)
     
+    if len(covalent.shape) == 2:
+
+        atomtypes = atomtypes.astype(np.uint32)
+        memberships = memberships.astype(np.uint32)
+        contacts = contacts.astype(np.uint32)
+        target = target.astype(np.uint32)
+
+        # Get the 'memberships' and 'covalent' sparse matrices
+        covalent = make_sparse_mat(covalent, 'cov', count=len(atomtypes)).to_dense()
+
+        # Extract the covalent bonds between all atoms in the structure
+        adjacency = create_adj(covalent)
+
+
+        adjacency = extract_sparse(adjacency).astype(np.float32)
+
+        return {
+            'entry': entry,
+            'atomtypes': atomtypes,
+            'memberships': memberships,
+            'contacts': contacts,
+            'target': target,
+            'adjacency': adjacency
+        }
+
+def hdf5_write(result, h5file):
+#     tqdm.write('Adding {}...'.format(result['entry']))
+    entry_group = h5file.create_group(result['entry'])
+    entry_group.create_dataset('atomtypes', data=result['atomtypes'], compression='gzip', compression_opts=9)
+    entry_group.create_dataset('memberships', data=result['memberships'], compression='gzip', compression_opts=9)
+    entry_group.create_dataset('contacts', data=result['contacts'], compression='gzip', compression_opts=9)
+    entry_group.create_dataset('target', data=result['target'], compression='gzip', compression_opts=9)
+    entry_group.create_dataset('adjacency', data=result['adjacency'], compression='gzip', compression_opts=9)
+
 
 if __name__ == '__main__':
+    
+    # Init the pool
+    pool = ThreadPoolExecutor(80)
     
     # Open up the HDF5 file
     h5file = h5py.File('data/contacts.hdf5', 'a')
@@ -158,47 +202,27 @@ if __name__ == '__main__':
         
     # Read in the text list of targets if proc_target is file
     elif os.path.isfile(proc_target):
-        with open(sys.argv[1], 'r') as handle:
+        with open(proc_target, 'r') as handle:
             accessions = [acc.strip().lower() for acc in handle.readlines()]
             
     else:
         raise(ValueError('Invalid target: `{}` file or directory not found.'.format(proc_target)))
     
+    futures = []
+    
     # Loop through the accession numbers
-    for entry in tqdm(accessions):
-        
+    for entry in tqdm(accessions, leave=False):
         if entry not in h5file:
-            entry_group = h5file.create_group(entry)
-            
-            tqdm.write('Adding {}'.format(entry))
+            futures.append(pool.submit(process, (entry)))
         
-            atomtypes, memberships, contacts = process_arpeggio_out('data/processed', entry)
-            
-            atomtypes = atomtypes.astype(np.uint32)
-            memberships = memberships.astype(np.uint32)
-            contacts = contacts.astype(np.uint32)
-            
-            entry_group.create_dataset('atomtypes', data=atomtypes, compression='gzip', compression_opts=9)
-            entry_group.create_dataset('memberships', data=memberships, compression='gzip', compression_opts=9)
-            entry_group.create_dataset('contacts', data=contacts, compression='gzip', compression_opts=9)
-
-            # Get the 'memberships' and 'contacts' sparse matrices 
-            memberships = make_sparse_mat(memberships, 'mem')
-            contacts = make_sparse_mat(contacts, 'con', count=len(atomtypes))
-
-            # Extract the covalent bonds between all atoms in the structure
-            covalent = contacts.to_dense()[:, :, cont_chan['covalent']].squeeze()
-            adjacency = create_adj(covalent).to_sparse()
-
-            # Extract the contact maps for training
-            contacts = contacts.to_dense()[:, :, cont_chan['vdw']:]
-            memberships = memberships.to_dense()
-            target = create_target(contacts, memberships, device).to_sparse()
-            
-            adjacency = extract_sparse(adjacency).astype(np.float32)
-            target = extract_sparse(target)[:, :3].astype(np.uint32)
-
-            entry_group.create_dataset('adjacency', data=adjacency, compression='gzip', compression_opts=9)
-            entry_group.create_dataset('target', data=target, compression='gzip', compression_opts=9)
-        
+    initial_len = len(futures)
+    
+    while len(futures) > 0:
+        tqdm.write('{} of {} structures remaining.'.format(len(futures), initial_len))
+        for idx, future in tqdm(enumerate(futures), total=len(futures), leave=False):
+            if future.done():
+                if future.result() is not None:
+                    hdf5_write(future.result(), h5file)
+                del futures[idx]
+    
     h5file.close()
