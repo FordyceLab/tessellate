@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
-from tesselate.data import TesselateDataset
+from tesselate.data import TesselateDataset, make_sparse_mat
 from tesselate.model import Network
 import torch
 import torch.multiprocessing as multiprocessing 
@@ -72,20 +72,21 @@ def plot_worker(queue):
 if __name__ == '__main__':
     
 #     multiprocessing.set_start_method('spawn')
-    queue = mp.Queue()
-    p = mp.Pool(10, plot_worker, (queue,))
+#     queue = mp.Queue()
+#     p = mp.Pool(10, plot_worker, (queue,))
 
     INPUT_SIZE = 25
     GRAPH_CONV = 7
+    FEED = 'single_chain'
     cuda0 = torch.device('cuda:0')
     cuda1 = torch.device('cuda:1')
     cpu = torch.device('cpu')
 
     model = Network(INPUT_SIZE, 7, cuda0, cuda1)
 
-    data = TesselateDataset('pdb_ids.txt', 'data/contacts.hdf5', 'single_chain')
+    data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/training_30_ids.txt', 'data/contacts.hdf5', FEED)
     dataloader = DataLoader(data, batch_size=1, shuffle=True,
-                            num_workers=0, pin_memory=False,
+                            num_workers=38, pin_memory=True,
                             collate_fn=lambda b: b[0])
 
     opt = optim.SGD(model.parameters(), lr = .01, momentum=0.9) #, weight_decay=1e-4)
@@ -95,16 +96,21 @@ if __name__ == '__main__':
         total_loss = 0
 
         for sample in tqdm(dataloader):
-            for idx in range(len(sample['id'])):
+            for idx in tqdm(range(len(sample['id'])), leave=False):
 
                 start = time.time()
 
                 opt.zero_grad()
+                
+                atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
+                adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
+                memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
+                target = make_sparse_mat(sample['target'][idx], 'tar', int(np.max(sample['memberships'][idx][:, 0]) + 1)).to_dense()
 
-                adjacency = sample['adjacency'][idx].to(cuda0)                
-                atomtypes = sample['atomtypes'][idx][:, 3]
-                memberships = sample['memberships'][idx].to(cuda0)
-                target = sample['target'][idx].to(cuda1)
+                    
+                adjacency = adjacency.float().to(cuda0)
+                memberships = memberships.float().to(cuda0)
+                target = target.float().to(cuda1)
                 
 #                 print(adjacency.shape)
 #                 print(atomtypes.shape)
@@ -117,11 +123,11 @@ if __name__ == '__main__':
 
             #     print(torch.sum(target))
 
-#                 loss = F.binary_cross_entropy(out, target)
+                loss = F.binary_cross_entropy(out, target)
 
 #                 print(torch.sum(loss * target), torch.sum(target), torch.sum(loss * target) / torch.sum(target))
 
-#                 loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2)
+                loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2)
 
 
                 back_start = time.time()
@@ -145,8 +151,8 @@ if __name__ == '__main__':
                 out = out.data.to(cpu).numpy()
                 target = target.to(cpu).numpy()
 
-                if epoch % 50 == 0:
-                    queue.put((pdb_id, target, out, epoch))
+#                 if epoch % 50 == 0:
+#                     queue.put((pdb_id, target, out, epoch))
 
 #                     del (adjacency, 
 #                          atomtypes, 
@@ -162,8 +168,8 @@ if __name__ == '__main__':
 #                     print('{}: {}'.format(sample['id'][idx][0], end - start))
 
 
-        if epoch % 10 == 0:    
-            print('Epoch: {}, Loss: {:02f}'.format(epoch, float(total_loss) / 10))
+#         if epoch % 10 == 0:
+        print('Epoch: {}, Loss: {:02f}'.format(epoch, float(total_loss) / 10))
     
     queue.put('plot_complete')
     queue.close()
