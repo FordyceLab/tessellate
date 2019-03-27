@@ -130,7 +130,7 @@ if __name__ == '__main__':
     model = Network(INPUT_SIZE, 7, cuda0, cuda1)
 
     # Generate the dataset/dataloader for training
-    data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/training_30_ids.txt', 'data/contacts.hdf5', FEED)
+    data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', FEED)
     dataloader = DataLoader(data, batch_size=1, shuffle=True,
                             num_workers=38, pin_memory=True,
                             collate_fn=lambda b: b[0])
