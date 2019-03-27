@@ -119,7 +119,7 @@ if __name__ == '__main__':
     # Define the model parameters
     INPUT_SIZE = 25
     GRAPH_CONV = 5
-    FEED = 'complete'
+    FEED = 'pairwise'
     
     # Get references to the different devices
     cuda0 = torch.device('cuda:0')
