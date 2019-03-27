@@ -40,12 +40,9 @@ class Network(nn.Module):
         
         self.ggn = GGNUnit(input_size).to(device0)
         
-        self.conv1 = nn.Conv2d(input_size, 50, 3, stride=1, padding=1).to(device1)
-        self.conv2 = nn.Conv2d(50, 25, 3, stride=1, padding=1).to(device1)
-        self.conv3 = nn.Conv2d(25, 25, 3, stride=1, padding=1).to(device1)
-        self.conv4 = nn.Conv2d(25, 25, 3, stride=1, padding=1).to(device1)
-        self.conv5 = nn.Conv2d(25, 25, 3, stride=1, padding=1).to(device1)
-        self.conv6 = nn.Conv2d(25, 12, 3, stride=1, padding=1).to(device1)
+        self.conv1 = nn.Conv2d(input_size, 25, 3, stride=1, padding=1).to(device1)
+        self.conv2 = nn.Conv2d(25, 25, 3, stride=1, padding=1).to(device1)
+        self.conv3 = nn.Conv2d(25, 12, 3, stride=1, padding=1).to(device1)
         
         
     def forward(self, adjacency, atoms, membership):
@@ -77,13 +74,7 @@ class Network(nn.Module):
         out = F.relu(out)
         out = self.conv2(out)
         out = F.relu(out)
-        out = self.conv3(out)
-        out = F.relu(out)
-        out = self.conv4(out)
-        out = F.relu(out)
-        out = self.conv5(out)
-        out = F.relu(out)
-        out = self.conv6(out).squeeze()
+        out = self.conv3(out).squeeze()
         
         out = torch.sigmoid(torch.add(out, out.transpose(1, 2)) / 2)
         

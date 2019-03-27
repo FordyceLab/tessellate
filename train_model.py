@@ -118,7 +118,7 @@ if __name__ == '__main__':
     
     # Define the model parameters
     INPUT_SIZE = 25
-    GRAPH_CONV = 7
+    GRAPH_CONV = 5
     FEED = 'complete'
     
     # Get references to the different devices
