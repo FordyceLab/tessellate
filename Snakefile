@@ -1,5 +1,3 @@
-from snake_helper import read_targets
-
 #############
 # Variables #
 #############
@@ -62,7 +60,9 @@ rule clean_PDB_file:
 rule process_PN_ID_lists:
     input:
         expand(ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number}/{type}/{dataset}_ids.txt',
-               comp_number=COMPS, type=TYPES, dataset=ALL_IDS)
+               comp_number=COMPS, type=TYPES, dataset=ALL_IDS),
+        expand(ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number}/x_ray/success/{dataset}_ids.txt',
+               comp_number=COMPS, dataset=ALL_IDS)
     
 
 # Clean up the id list directory
@@ -114,7 +114,6 @@ rule get_current_sturcture_list:
         ID_LIST_DIR + '/pdb_info/all_current_structures.txt'
     shell:
         'find {input} -type f -printf "%f\n" | sed "s/^pdb//g" | sed "s/\.ent\.gz//g" | sort > {output}'
-    
 
 # Filter all lists to only have current structures
 rule filter_current_structures:
@@ -126,13 +125,13 @@ rule filter_current_structures:
     shell:
         'comm -12 <( cat {input.curr_file} ) <( sort {input.ids} ) > {output}'
 
-
+# Filter structures by type
 rule filter_type_structures:
     input:
         type_file = ID_LIST_DIR + '/pdb_info/{type}_structures.txt',
         ids = ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number}/complete/current/{in_file}.txt'
     output:
-        ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number,\d+}/{type}/{in_file}.txt'
+        ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number,\d+}/{type([a-z|\_])+}/{in_file}.txt'
     shell:
         'comm -12 <( sort {input.type_file} ) <( sort {input.ids} ) > {output}'
 
@@ -144,7 +143,7 @@ rule download_PDB_entry_type:
     shell:
         'wget -P {ID_LIST_DIR}/pdb_info ftp://ftp.wwpdb.org/pub/pdb/derived_data/pdb_entry_type.txt'
      
-
+# Parse the structure type for each entry
 rule parse_structure_type:
     input:
         ID_LIST_DIR + '/pdb_info/pdb_entry_type.txt'
@@ -154,6 +153,16 @@ rule parse_structure_type:
         type_key = lambda wildcards: TYPE_KEY_DICT[wildcards.type]
     shell:
         'grep {params.type_key} {input} | cut -f1 > {output}'
+        
+# Subset existing list by data sets that were succesfully processed
+rule parse_successful_examples:
+    input:
+        data_file = LOCAL_DATA_DIR + '/contacts.hdf5',
+        list_file = ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number}/{type}/{in_file}.txt'
+    output:
+        ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number}/{type,([a-z|\_])+}/success/{in_file}.txt'
+    shell:
+        'python scripts/filter_ID_list_success.py {input.data_file} {input.list_file} > {output}'
 
 
 #######################
