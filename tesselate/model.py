@@ -40,9 +40,9 @@ class Network(nn.Module):
         
         self.ggn = GGNUnit(input_size).to(device0)
         
-        self.conv1 = nn.Conv2d(input_size, 25, 3, stride=1, padding=1).to(device1)
-        self.conv2 = nn.Conv2d(25, 25, 3, stride=1, padding=1).to(device1)
-        self.conv3 = nn.Conv2d(25, 12, 3, stride=1, padding=1).to(device1)
+        self.conv1 = nn.Conv2d(input_size, 15, 3, stride=1, padding=1).to(device1)
+        self.conv2 = nn.Conv2d(15, 12, 3, stride=1, padding=1).to(device1)
+        self.conv3 = nn.Conv2d(12, 12, 3, stride=1, padding=1).to(device1)
         
         
     def forward(self, adjacency, atoms, membership):
