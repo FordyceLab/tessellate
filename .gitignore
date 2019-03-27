@@ -16,3 +16,6 @@ pdbtools
 id_lists
 figs
 
+# Ignore log files
+*.log
+
