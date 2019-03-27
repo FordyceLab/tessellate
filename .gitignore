@@ -5,9 +5,14 @@
 *.pyc
 
 # Data directory
-/data
+data
 
 # Add other directories
 .snakemake
 .ipynb_checkpoints
 pdbtools
+
+# Large model/data directories
+id_lists
+figs
+
