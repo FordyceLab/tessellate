@@ -175,6 +175,16 @@ def select_chains(atomtypes, memberships, adjacency, target, chains):
     return (sel_atomtypes, sel_memberships, sel_adjacency, sel_target)
 
 
+def utri_to_vec(n_res, n_chan = 12):
+    idx_map = {}
+    idx = 0
+    for i, j in zip(*np.triu_indices(n_res)):
+        for k in range(n_chan):
+            idx_map[(i, j, k)] = idx
+            idx +=1
+    return (len(idx_map), idx_map)
+
+
 class TesselateDataset(Dataset):
     """
     Dataset class for structural data.
