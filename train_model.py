@@ -2,7 +2,7 @@ from git import Repo
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
-from tesselate.data import TesselateDataset, make_sparse_mat
+from tesselate.data import TesselateDataset, make_sparse_mat, utri_to_vec
 from tesselate.model import Network
 import torch
 import torch.multiprocessing as multiprocessing 
@@ -15,6 +15,7 @@ from tqdm import *
 import time
 import wandb
 
+multiprocessing.set_sharing_strategy('file_system')
 
 def plot_channels(pdb_id, target, out, epoch):
     """
@@ -106,9 +107,9 @@ if __name__ == '__main__':
     
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
-    if Repo('.').is_dirty():
-        print("Git repo is dirty, please commit changes before training model.")
-        sys.exit(1)
+    #if Repo('.').is_dirty():
+    #    print("Git repo is dirty, please commit changes before training model.")
+    #    sys.exit(1)
     
     # Initialize the multiprocessing capabilities for plotting
 #     multiprocessing.set_start_method('spawn')
@@ -119,7 +120,7 @@ if __name__ == '__main__':
     # Define the model parameters
     INPUT_SIZE = 25
     GRAPH_CONV = 5
-    FEED = 'pairwise'
+    FEED = 'complete'
     
     # Get references to the different devices
     cuda0 = torch.device('cuda:0')
@@ -132,7 +133,7 @@ if __name__ == '__main__':
     # Generate the dataset/dataloader for training
     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', FEED)
     dataloader = DataLoader(data, batch_size=1, shuffle=True,
-                            num_workers=38, pin_memory=True,
+                            num_workers=500, pin_memory=False,
                             collate_fn=lambda b: b[0])
 
     # Initialize the optimizer
@@ -157,7 +158,17 @@ if __name__ == '__main__':
                 atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
                 adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
                 memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
-                target = make_sparse_mat(sample['target'][idx], 'tar', int(np.max(sample['memberships'][idx][:, 0]) + 1)).to_dense()
+                target = sample['target'][idx]
+                #target = make_sparse_mat(sample['target'][idx], 'tar', int(np.max(sample['memberships'][idx][:, 0]) + 1)).to_dense()
+                
+                #target_len, target_map = utri_to_vec(np.max(sample['memberships'][idx][:, 0]) + 1)
+                #target = torch.zeros(target_len, dtype=torch.float32)
+            
+                #sel = [target_map[(idx_row[1], idx_row[2], idx_row[0])] for idx_row in sample['target'][idx]]
+            
+                #target[sel] = 1
+                
+                
 
                 # Move the data to the appropriate device
                 adjacency = adjacency.float().to(cuda0)

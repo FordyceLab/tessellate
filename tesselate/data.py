@@ -185,6 +185,16 @@ def utri_to_vec(n_res, n_chan = 12):
     return (len(idx_map), idx_map)
 
 
+def make_vec_target(target_array, mem_array):
+    
+    target_len, target_map = utri_to_vec(np.max(mem_array[:, 0]) + 1)
+    target = torch.zeros(target_len, dtype=torch.float32)
+    sel = [target_map[(idx_row[1], idx_row[2], idx_row[0])] for idx_row in target_array]
+    target[sel] = 1
+    
+    return target
+
+
 class TesselateDataset(Dataset):
     """
     Dataset class for structural data.
@@ -302,6 +312,8 @@ class TesselateDataset(Dataset):
                 adjacency_list.append(selection[2])
                 target_list.append(selection[3])
 
+        target_list = [make_vec_target(target_list[idx], membership_list[idx]) for idx in range(len(target_list))]
+                
         # Create the data dictionary
         data_dict = {
             'id': entry_list,
