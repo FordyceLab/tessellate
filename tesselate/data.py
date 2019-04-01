@@ -239,8 +239,11 @@ class TesselateDataset(Dataset):
             # Rearrange columns
             target = h5file[entry]['target'][:][:, [2, 0, 1]]
             
-            # Subtract 3 (because first 3 channels are dropped in the target)
-            target[:, 0] = target[:, 0] - 3 
+        # Subtract 3 (because first 3 channels are dropped in the target)
+        target[:, 0] = target[:, 0] - 3 
+        
+        # Mirror the target
+        target = np.unique(np.concatenate((target, target[:, [0, 2, 1]]), axis=0), axis=0)
 
         # Extract the unique chains in the structure
         unique_chains = np.unique(atomtypes[:, 0])
