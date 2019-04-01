@@ -106,9 +106,9 @@ if __name__ == '__main__':
     
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
-    if Repo('.').is_dirty():
-        print("Git repo is dirty, please commit changes before training model.")
-        sys.exit(1)
+#     if Repo('.').is_dirty():
+#         print("Git repo is dirty, please commit changes before training model.")
+#         sys.exit(1)
     
     # Initialize the multiprocessing capabilities for plotting
 #     multiprocessing.set_start_method('spawn')
@@ -119,7 +119,7 @@ if __name__ == '__main__':
     # Define the model parameters
     INPUT_SIZE = 25
     GRAPH_CONV = 5
-    FEED = 'pairwise'
+    FEED = 'single_chain'
     
     # Get references to the different devices
     cuda0 = torch.device('cuda:0')
@@ -132,7 +132,7 @@ if __name__ == '__main__':
     # Generate the dataset/dataloader for training
     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', FEED)
     dataloader = DataLoader(data, batch_size=1, shuffle=True,
-                            num_workers=38, pin_memory=True,
+                            num_workers=1000, pin_memory=True,
                             collate_fn=lambda b: b[0])
 
     # Initialize the optimizer
@@ -165,10 +165,14 @@ if __name__ == '__main__':
                 target = target.float().to(cuda1)
 
                 # Make the prediction
-                out = model(adjacency, atomtypes, memberships)
+                try:
+                    out = model(adjacency, atomtypes, memberships)
+                
+                except:
+                    print(sample['id'])
 
                 # Get the mean reduced loss
-                loss = F.binary_cross_entropy(out, target, reduction='mean')
+#                 loss = F.binary_cross_entropy(out, target, reduction='mean')
 
                 # Get the summed loss
                 loss = F.binary_cross_entropy(out, target)
@@ -205,7 +209,7 @@ if __name__ == '__main__':
 #                          loss)
 
 #                     torch.cuda.empty_cache()
-
+#                 tqdm.write(float(loss))
 
 #         if epoch % 10 == 0:
         print('Epoch: {}, Loss: {:02f}'.format(epoch, float(total_loss) / 10))
