@@ -4,28 +4,10 @@ import h5py
 import torch
 from torch.utils.data import Dataset
 from itertools import combinations
-
-# Make a disctionary of the contact map channels
-cont_chan = (
-    'clash',
-    'covalent',
-    'vdw_clash',
-    'vdw',
-    'proximal',
-    'hydrogen_bond',
-    'weak_hydrogen_bond',
-    'halogen_bond',
-    'ionic',
-    'metal_complex',
-    'aromatic',
-    'hydrophobic',
-    'carbonyl',
-    'polar',
-    'weak_polar',
-)
-
-cont_chan = {btype: chan_num for chan_num, btype in enumerate(cont_chan)}
-
+from itertools import combinations_with_replacement as cwr
+import ray
+import multiprocessing as mp
+import ctypes
 
 def torch_idx(idx_mat):
     """
@@ -130,7 +112,7 @@ def select_chains(atomtypes, memberships, adjacency, target, chains):
     - chains (list) - List of chains in selection
     
     Returns:
-    - A tuple of dense ndarrays for the selection (atomtypes, memberships, adjacency, target)
+    - A tuple of dense ndarrays for the selection (atomtypes, memberships, adjacency, target).
     """
     
     # Hard code the column positions of the chain, residue, and atom identifiers in the atomtypes dataset.
@@ -175,24 +157,204 @@ def select_chains(atomtypes, memberships, adjacency, target, chains):
     return (sel_atomtypes, sel_memberships, sel_adjacency, sel_target)
 
 
-def utri_to_vec(n_res, n_chan = 12):
+def utri_3d_to_1d(n_res, n_chan = 12):
+    """
+    Convert the upper triangular indices to a dictionary linking 3d position
+    to position within a 1d vector.
+    
+    Args:
+    - n_res (int) - The number of residues in the structure.
+    - n_chan (int) - The number of channels in the contact map.
+    
+    Returns:
+    - A tuple of the integer length of the vector and the mapping to create
+        the vector.
+    """
+    # Initialize the dictionary for the conversion
     idx_map = {}
+    
+    # Start indexing at 0
     idx = 0
+    
+    # Loop through the upper triangular indices
     for i, j in zip(*np.triu_indices(n_res)):
+        
+        # Loop through the channels
         for k in range(n_chan):
+            
+            # Add the link to the dictionary
             idx_map[(i, j, k)] = idx
+            
+            # Increment the id
             idx +=1
+            
+    # Return the length of the vector and the map
+    return (len(idx_map), idx_map)
+
+def utri_2d_to_1d(n_res):
+    """
+    Convert the upper triangular indices to a dictionary linking 3d position
+    to position within a 1d row index vector.
+    
+    Args:
+    - n_res (int) - The number of residues in the structure.
+    
+    Returns:
+    - A tuple of the integer length of the vector and the mapping to create
+        the vector.
+    """
+    # Initialize the dictionary for the conversion
+    idx_map = {}
+    
+    # Start indexing at 0
+    idx = 0
+    
+    # Loop through the upper triangular indices
+    for i, j in zip(*np.triu_indices(n_res)):
+        
+        # Add the link to the dictionary
+        idx_map[(i, j)] = idx
+        
+        # Increment the id
+        idx +=1
+        
+    # Return the length of the vector and the map
     return (len(idx_map), idx_map)
 
 
 def make_vec_target(target_array, mem_array):
+    """
+    Make the target contact map into a non-redundant 1d target vector
     
-    target_len, target_map = utri_to_vec(np.max(mem_array[:, 0]) + 1)
+    Args:
+    - target_array (numpy ndarray) - Target array in coordinate format.
+    - mem_array (numpy ndarray) - Membership array in coordinate format.
+    
+    Returns:
+    - A 1d PyTorch FloatTensor of the flattened prediction matrix (1x(n_res*12)). 
+    """
+    # Get the target length and coordinate mapping
+    target_len, target_map = utri_3d_to_1d(np.max(mem_array[:, 0]) + 1)
+    
+    # Initialize the target tensor
     target = torch.zeros(target_len, dtype=torch.float32)
-    sel = [target_map[(idx_row[1], idx_row[2], idx_row[0])] for idx_row in target_array]
-    target[sel] = 1
     
+    # Get the selection of positive examples
+    sel = [target_map[(idx_row[1], idx_row[2], idx_row[0])] for idx_row in target_array]
+    
+    # Set the positive examples to 1 and return the target
+    target[sel] = 1
     return target
+
+def make_mat_target(target_array, mem_array):
+    """
+    Make the target contact map into a non-redundant 1d target vector
+    
+    Args:
+    - target_array (numpy ndarray) - Target array in coordinate format.
+    - mem_array (numpy ndarray) - Membership array in coordinate format.
+    
+    Returns:
+    - A 1d PyTorch FloatTensor of the flattened prediction matrix (1x(n_res*12)). 
+    """
+    # Get the target length and coordinate mapping
+    target_len, target_map = utri_2d_to_1d(np.max(mem_array[:, 0]) + 1)
+    
+    # Initialize the target tensor
+    target = torch.zeros((target_len, 12), dtype=torch.float32)
+    
+    # Get the selection of positive examples
+    sel = [target_map[(idx_row[1], idx_row[2])] for idx_row in target_array]
+    
+    # Set the positive examples to 1 and return the target
+    target[sel, list(target_array[:, 0])] = 1
+    return target
+
+
+def process(idx, accessions, h5file, feed_method):
+    
+    # Get the entry PDB ID
+    entry = accessions[idx]
+
+    # Read the data from the HDF5 file
+    atomtypes = h5file[entry]['atomtypes'][:].astype(np.int64)
+    memberships = h5file[entry]['memberships'][:]
+    adjacency = h5file[entry]['adjacency'][:]
+
+    # Handle the target slightly differently
+    # Rearrange columns
+    target = h5file[entry]['target'][:][:, [2, 0, 1]]
+
+    # Subtract 3 (because first 3 channels are dropped in the target)
+    target[:, 0] = target[:, 0] - 3 
+
+    # Extract the unique chains in the structure
+    unique_chains = np.unique(atomtypes[:, 0])
+
+    # Generate lists to store data combinations
+    chain_combos = []
+
+    entry_list = []
+    atomtype_list = []
+    membership_list = []
+    adjacency_list = []
+    target_list = []
+
+    # Handle feeding of complete structure
+    if feed_method == 'complete':
+        entry_list.append(entry)
+        atomtype_list.append(atomtypes)
+        membership_list.append(memberships)
+        adjacency_list.append(adjacency)
+        target_list.append(target)
+
+    # Handle single chain and pairwise feedings
+    else:
+
+        # Handle single chain feeding
+        if feed_method == 'single_chain':
+
+            # Get all single chain IDs and add to list
+            for chain in unique_chains:
+                chain_combos.append([chain])
+
+        # Handle pairwise feeding
+        elif feed_method == 'pairwise':
+
+            # Generate all pairwise chain combinations and add to list
+            chain_combos.extend(combinations(unique_chains, 2))
+
+        # Raise an error for unknown feed method
+        else:
+            raise(ValueError('Unknown feed method "{}".'.format(self.feed_method)))
+
+        # Loop through each subset selection and add the matrices to the appropriate list
+        for chains in chain_combos:
+            selection = select_chains(atomtypes, memberships, adjacency, target, chains)
+
+            entry_list.append('{}_'.format(entry, '_'.join([str(i) for i in chains])))
+            atomtype_list.append(selection[0])
+            membership_list.append(selection[1])
+            adjacency_list.append(selection[2])
+            target_list.append(selection[3])
+
+    target_list = [make_mat_target(target_list[idx], membership_list[idx]) for idx in range(len(target_list))]
+
+    combos_list = [np.vstack(np.triu_indices(np.max(mem_array[:, 0]) + 1)).transpose()
+                   for mem_array in membership_list]
+
+    # Create the data dictionary
+    data_dict = {
+        'id': entry_list,
+        'atomtypes': atomtype_list,
+        'memberships': membership_list,
+        'adjacency': adjacency_list,
+        'target': target_list,
+        'combos': combos_list
+    }
+
+    # Return the data for training
+    return data_dict
 
 
 class TesselateDataset(Dataset):
@@ -219,9 +381,12 @@ class TesselateDataset(Dataset):
         # Store desired feed method
         self.feed_method = feed_method
         
+        self.dataset = None
+        
         # Read in and store a list of accession IDs
         with open(accession_list, 'r') as handle:
-            self.accessions = [acc.strip().lower() for acc in handle.readlines()]
+            array = np.array([acc.strip().lower() for acc in handle.readlines()])
+            self.accessions = mp.Array(ctypes.c_wchar_p, array)
             
     def __len__(self):
         """
@@ -244,84 +409,10 @@ class TesselateDataset(Dataset):
             target tensors. All tensors are sparse when possible.
         """
         
-        # Get the entry PDB ID
-        entry = self.accessions[idx]
+        if self.dataset is None:
+            self.dataset = h5py.File(self.hdf5_dataset, 'r')
         
-        # Open the HDF5 data file
-        with h5py.File(self.hdf5_dataset, 'r') as h5file:
-
-            # Read the data from the HDF5 file
-            atomtypes = h5file[entry]['atomtypes'][:].astype(np.int64)
-            memberships = h5file[entry]['memberships'][:]
-            adjacency = h5file[entry]['adjacency'][:]
-            
-            # Handle the target slightly differently
-            # Rearrange columns
-            target = h5file[entry]['target'][:][:, [2, 0, 1]]
-            
-            # Subtract 3 (because first 3 channels are dropped in the target)
-            target[:, 0] = target[:, 0] - 3 
-
-        # Extract the unique chains in the structure
-        unique_chains = np.unique(atomtypes[:, 0])
-
-        # Generate lists to store data combinations
-        chain_combos = []
+        data_dict = process(idx, self.accessions, self.dataset, self.feed_method)
         
-        entry_list = []
-        atomtype_list = []
-        membership_list = []
-        adjacency_list = []
-        target_list = []
-
-        # Handle feeding of complete structure
-        if self.feed_method == 'complete':
-            entry_list.append(entry)
-            atomtype_list.append(atomtypes)
-            membership_list.append(memberships)
-            adjacency_list.append(adjacency)
-            target_list.append(target)
-
-        # Handle single chain and pairwise feedings
-        else:
-            
-            # Handle single chain feeding
-            if self.feed_method == 'single_chain':
-                
-                # Get all single chain IDs and add to list
-                for chain in unique_chains:
-                    chain_combos.append([chain])
-
-            # Handle pairwise feeding
-            elif self.feed_method == 'pairwise':
-                
-                # Generate all pairwise chain combinations and add to list
-                chain_combos.extend(combinations(unique_chains, 2))
-
-            # Raise an error for unknown feed method
-            else:
-                raise(ValueError('Unknown feed method "{}".'.format(self.feed_method)))
-
-            # Loop through each subset selection and add the matrices to the appropriate list
-            for chains in chain_combos:
-                selection = select_chains(atomtypes, memberships, adjacency, target, chains)
-
-                entry_list.append('{}_'.format(entry, '_'.join([str(i) for i in chains])))
-                atomtype_list.append(selection[0])
-                membership_list.append(selection[1])
-                adjacency_list.append(selection[2])
-                target_list.append(selection[3])
-
-        target_list = [make_vec_target(target_list[idx], membership_list[idx]) for idx in range(len(target_list))]
-                
-        # Create the data dictionary
-        data_dict = {
-            'id': entry_list,
-            'atomtypes': atomtype_list,
-            'memberships': membership_list,
-            'adjacency': adjacency_list,
-            'target': target_list
-        }
-
-        # Return the data for training
         return data_dict
+        
