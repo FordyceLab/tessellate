@@ -109,7 +109,10 @@ if __name__ == '__main__':
     
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
-    if Repo('.').is_dirty():
+    repo = Repo('.')
+    
+    print(repo.head.object.hexsha)
+    if repo.is_dirty():
         print("Git repo is dirty, please commit changes before training model.")
         sys.exit(1)
     
@@ -118,8 +121,7 @@ if __name__ == '__main__':
 #     queue = mp.Queue()
 #     p = mp.Pool(10, plot_worker, (queue,))
 
-    wandb.init(project='tesselate')
-    
+    wandb.init(project='tesselate', config={'commit': repo.head.object.hexsha})
     
     
     # Define the model parameters
@@ -151,6 +153,11 @@ if __name__ == '__main__':
     # Initialize the optimizer
     opt = optim.SGD(model.parameters(), lr = .01, momentum=0.9) #, weight_decay=1e-4)
 
+    
+    step_iter = 0
+    step_loss = 0
+    step_count = 0
+    
     # Train for N epochs
     for epoch in trange(1000, leave=False):
         
@@ -206,6 +213,18 @@ if __name__ == '__main__':
                     # Get the total loss
                     total_loss += loss.data
                     total_count += target.shape[0] * target.shape[1]
+                    
+                    step_loss += loss.data
+                    step_count += target.shape[0] * target.shape[1]
+                    step_iter += 1
+                    
+                    if step_iter % 1000 == 0:
+                        step_loss = step_loss / step_count
+                        wandb.log({'step_loss': step_loss})
+                        
+                        step_iter = 0
+                        step_loss = 0
+                        step_count = 0
                     
                 except:
                     continue
