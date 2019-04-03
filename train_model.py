@@ -262,7 +262,7 @@ if __name__ == '__main__':
                 
         val_loss = total_loss / total_count
                 
-        wandb.log({'train_loss': train_loss, 'val_loss': })
+        wandb.log({'train_loss': train_loss, 'val_loss': val_loss})
 
     
 #     # Finish the plotting queue
