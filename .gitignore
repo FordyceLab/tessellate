@@ -19,3 +19,5 @@ figs
 # Ignore log files
 *.log
 
+# Ignore untitled notebooks
+Untitled*
