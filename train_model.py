@@ -202,7 +202,7 @@ if __name__ == '__main__':
                     opt.step()
 
                     # Get the summed loss
-                    loss = F.binary_cross_entropy(out, target)
+                    loss = F.binary_cross_entropy(out, target, reduction='sum')
 
                     # Get the frequency-adjusted loss
                     #loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2)
@@ -261,7 +261,7 @@ if __name__ == '__main__':
                     out = model(adjacency, atomtypes, memberships, combos)
 
                     # Get the summed loss
-                    loss = F.binary_cross_entropy(out, target)
+                    loss = F.binary_cross_entropy(out, target, reduction='sum')
 
                     # Get the total loss
                     total_loss += loss.data
