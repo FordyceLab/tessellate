@@ -110,8 +110,6 @@ if __name__ == '__main__':
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
     repo = Repo('.')
-    
-    print(repo.head.object.hexsha)
     if repo.is_dirty():
         print("Git repo is dirty, please commit changes before training model.")
         sys.exit(1)
