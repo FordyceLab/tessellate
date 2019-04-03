@@ -4,10 +4,9 @@ import h5py
 import torch
 from torch.utils.data import Dataset
 from itertools import combinations
-from itertools import combinations_with_replacement as cwr
-import ray
-import multiprocessing as mp
-import ctypes
+from dask.distributed import Client, LocalCluster
+import random
+
 
 def torch_idx(idx_mat):
     """
@@ -121,7 +120,7 @@ def select_chains(atomtypes, memberships, adjacency, target, chains):
     ATOM_IDX = 2
     
     # Select the atomtypes
-    sel_atomtypes = np.array([row for row in atomtypes if row[CHAIN_IDX] in chains])
+    sel_atomtypes = atomtypes[np.isin(atomtypes[:, CHAIN_IDX], chains), :]
     
     # Select the unique chains, residues, and atoms
     sel_chains = np.unique(sel_atomtypes[:, CHAIN_IDX])
@@ -130,9 +129,10 @@ def select_chains(atomtypes, memberships, adjacency, target, chains):
     
     # Select the pertinent information from the coordinate matrices
     #### NOTE: adjacency matrix may not be correct, may have to recompute for the smaller number of atoms when performing chain selection
-    sel_adjacency = adjacency[[adjacency[i, 0] in sel_atoms and adjacency[i, 1] in sel_atoms for i in range(len(adjacency))]]
-    sel_memberships = memberships[[memberships[i, 0] in sel_residues and memberships[i, 1] in sel_atoms for i in range(len(memberships))]]
-    sel_target = target[[target[i, 1] in sel_residues and target[i, 2] in sel_residues for i in range(len(target))]]
+    sel_adjacency = adjacency[np.isin(adjacency[:, 0], sel_atoms) & np.isin(adjacency[:, 1], sel_atoms), :]
+    sel_memberships = memberships[np.isin(memberships[:, 0], sel_residues) &
+                                  np.isin(memberships[:, 1], sel_atoms), :]
+    sel_target = target[np.isin(target[:, 1], sel_residues) & np.isin(target[:, 2], sel_residues), :]
     
     # Handle renumbering of atoms and residues
     chain_remap = {orig_number: idx for idx, orig_number in enumerate(np.sort(sel_chains))}
@@ -155,7 +155,6 @@ def select_chains(atomtypes, memberships, adjacency, target, chains):
     
     # Return a tuple of the selections in coordinate form
     return (sel_atomtypes, sel_memberships, sel_adjacency, sel_target)
-
 
 def utri_3d_to_1d(n_res, n_chan = 12):
     """
@@ -186,7 +185,7 @@ def utri_3d_to_1d(n_res, n_chan = 12):
             idx_map[(i, j, k)] = idx
             
             # Increment the id
-            idx +=1
+            idx += 1
             
     # Return the length of the vector and the map
     return (len(idx_map), idx_map)
@@ -237,7 +236,7 @@ def make_vec_target(target_array, mem_array):
     target_len, target_map = utri_3d_to_1d(np.max(mem_array[:, 0]) + 1)
     
     # Initialize the target tensor
-    target = torch.zeros(target_len, dtype=torch.float32)
+    target = np.zeros(target_len, dtype=np.float32)
     
     # Get the selection of positive examples
     sel = [target_map[(idx_row[1], idx_row[2], idx_row[0])] for idx_row in target_array]
@@ -245,6 +244,7 @@ def make_vec_target(target_array, mem_array):
     # Set the positive examples to 1 and return the target
     target[sel] = 1
     return target
+
 
 def make_mat_target(target_array, mem_array):
     """
@@ -256,12 +256,12 @@ def make_mat_target(target_array, mem_array):
     
     Returns:
     - A 1d PyTorch FloatTensor of the flattened prediction matrix (1x(n_res*12)). 
-    """
+    """    
     # Get the target length and coordinate mapping
     target_len, target_map = utri_2d_to_1d(np.max(mem_array[:, 0]) + 1)
     
     # Initialize the target tensor
-    target = torch.zeros((target_len, 12), dtype=torch.float32)
+    target = np.zeros((target_len, 12), dtype=np.float32)
     
     # Get the selection of positive examples
     sel = [target_map[(idx_row[1], idx_row[2])] for idx_row in target_array]
@@ -271,23 +271,8 @@ def make_mat_target(target_array, mem_array):
     return target
 
 
-def process(idx, accessions, h5file, feed_method):
+def process(entry, atomtypes, memberships, adjacency, target, feed_method):
     
-    # Get the entry PDB ID
-    entry = accessions[idx]
-
-    # Read the data from the HDF5 file
-    atomtypes = h5file[entry]['atomtypes'][:].astype(np.int64)
-    memberships = h5file[entry]['memberships'][:]
-    adjacency = h5file[entry]['adjacency'][:]
-
-    # Handle the target slightly differently
-    # Rearrange columns
-    target = h5file[entry]['target'][:][:, [2, 0, 1]]
-
-    # Subtract 3 (because first 3 channels are dropped in the target)
-    target[:, 0] = target[:, 0] - 3 
-
     # Extract the unique chains in the structure
     unique_chains = np.unique(atomtypes[:, 0])
 
@@ -326,7 +311,7 @@ def process(idx, accessions, h5file, feed_method):
 
         # Raise an error for unknown feed method
         else:
-            raise(ValueError('Unknown feed method "{}".'.format(self.feed_method)))
+            raise(ValueError('Unknown feed method "{}".'.format(feed_method)))
 
         # Loop through each subset selection and add the matrices to the appropriate list
         for chains in chain_combos:
@@ -378,15 +363,14 @@ class TesselateDataset(Dataset):
         # Store reference to HDF5 data file
         self.hdf5_dataset = hdf5_dataset
         
+        self.dataset = h5py.File(self.hdf5_dataset)
+        
         # Store desired feed method
         self.feed_method = feed_method
         
-        self.dataset = None
-        
         # Read in and store a list of accession IDs
         with open(accession_list, 'r') as handle:
-            array = np.array([acc.strip().lower() for acc in handle.readlines()])
-            self.accessions = mp.Array(ctypes.c_wchar_p, array)
+            self.accessions = np.array([acc.strip().lower() for acc in handle.readlines()])
             
     def __len__(self):
         """
@@ -408,11 +392,96 @@ class TesselateDataset(Dataset):
         - Dictionary of PDB ID and atomtype, memberships, adjacency, and
             target tensors. All tensors are sparse when possible.
         """
+        # Get the entry PDB ID
+        entry = self.accessions[idx]
+
+        # Read the data from the HDF5 file
+        atomtypes = self.dataset[entry]['atomtypes'][:].astype(np.int64)
+        memberships = self.dataset[entry]['memberships'][:]
+        adjacency = self.dataset[entry]['adjacency'][:]
+
+        # Handle the target slightly differently
+        # Rearrange columns
+        target = self.dataset[entry]['target'][:][:, [2, 0, 1]]
+
+        # Subtract 3 (because first 3 channels are dropped in the target)
+        target[:, 0] = target[:, 0] - 3
         
-        if self.dataset is None:
-            self.dataset = h5py.File(self.hdf5_dataset, 'r')
-        
-        data_dict = process(idx, self.accessions, self.dataset, self.feed_method)
+        data_dict = process(entry, atomtypes, memberships, adjacency, target, self.feed_method)
         
         return data_dict
+        
+        
+class TesselateDaskDataset(object):
+    def __init__(self, accession_list, hdf5_dataset, feed_method='complete'):
+        
+        # Store reference to accession list file
+        self.accession_list = accession_list
+        
+        # Store reference to HDF5 data file
+        self.hdf5_dataset = hdf5_dataset
+        
+        # Store desired feed method
+        self.feed_method = feed_method
+        
+#         self.dataset = h5py.File(self.hdf5_dataset, 'r')
+        
+        self.client = None
+        
+        # Read in and store a list of accession IDs
+        with open(accession_list, 'r') as handle:
+            self.accessions = np.array([acc.strip().lower() for acc in handle.readlines()])
+        
+    def __len__(self):
+        """
+        Return the length of the dataset.
+        
+        Returns:
+        - Integer count of number of examples.
+        """
+        return len(self.accessions)
+    
+    def __getitem__(self, idx):
+        
+        # Get the entry PDB ID
+        entry = self.accessions[idx]
+        
+        if self.client is not None:
+            future = self.client.submit(process, entry, self.hdf5_dataset, self.feed_method)
+            return future
+        else:
+            data_dict = process(entry, self.hdf5_dataset, self.feed_method)
+            return data_dict
+    
+    
+class DataLoader(object):
+    def __init__(self, dataset, num_workers, shuffle=True):
+        self.dataset = dataset
+        self.cluster = LocalCluster(n_workers=4, diagnostics_port=8788)
+        self.client = Client(self.cluster)
+        self.shuffle = shuffle
+        dataset.client = self.client
+        self.futures = []
+        
+    def __len__(self):
+        return len(self.dataset)
+        
+    def __iter__(self):
+        order = list(range(len(self.dataset)))
+        
+        if self.shuffle:
+            random.shuffle(order)
+            
+        for i in order:
+            self.futures.append(self.dataset[i])
+        
+        return self
+
+    def __next__(self):
+        if len(self.futures) > 0:
+            future = self.futures.pop(0)
+            return future.result()
+        else:
+            raise StopIteration()
+        
         

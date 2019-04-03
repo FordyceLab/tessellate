@@ -1,12 +1,10 @@
 from git import Repo
 import matplotlib.pyplot as plt
 import numpy as np
-import ray
 import sys
 from tesselate.data import TesselateDataset, make_sparse_mat
 from tesselate.model import Network
 import torch
-import torch.multiprocessing as multiprocessing 
 import multiprocessing as mp
 import torch.nn as nn
 import torch.nn.functional as F
@@ -115,6 +113,9 @@ if __name__ == '__main__':
     #    print("Git repo is dirty, please commit changes before training model.")
     #    sys.exit(1)
     
+    cluster = LocalCluster(n_workers=30, diagnostics_port=8788)
+    client = Client(cluster)
+    
     # Initialize the multiprocessing capabilities for plotting
 #     multiprocessing.set_start_method('spawn')
 #     queue = mp.Queue()
@@ -137,8 +138,13 @@ if __name__ == '__main__':
     # Generate the dataset/dataloader for training
     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', FEED)
     dataloader = DataLoader(data, batch_size=1, shuffle=True,
-                            num_workers=500, pin_memory=False,
+                            num_workers=0, pin_memory=False,
                             collate_fn=dict_collate)
+
+
+#     data = TesselateDaskDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', FEED)
+#     dataloader = DataLoader(data, num_workers=500, shuffle=True)
+    
 
     # Initialize the optimizer
     opt = optim.SGD(model.parameters(), lr = .01, momentum=0.9) #, weight_decay=1e-4)
@@ -162,7 +168,7 @@ if __name__ == '__main__':
                 atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
                 adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
                 memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
-                target = sample['target'][idx]
+                target = torch.from_numpy(sample['target'][idx])
                 
                 combos = torch.from_numpy(sample['combos'][idx])
                 
@@ -205,8 +211,6 @@ if __name__ == '__main__':
                 # Get the frequency-adjusted loss
                 #loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2)
 
-                update_end = time.time()
-#                     print('Update: {}'.format(update_end - update_start))
 
                 # Get the total loss
                 total_loss += loss.data
@@ -216,13 +220,6 @@ if __name__ == '__main__':
                 out = out.data.to(cpu).numpy()
                 target = target.to(cpu).numpy()
                 
-                
-                #del out
-                #del target
-                #del adjacency
-                #del memberships
-                #del combos
-                #del sample
 
                 # Add plots to the mp queue
 #                 if epoch % 50 == 0:

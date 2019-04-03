@@ -29,12 +29,12 @@ class FFN(nn.Module):
         super().__init__()
 
         self.linear1 = nn.Linear(input_size, 12)
-#         self.linear2 = nn.Linear(25, 12)
+        self.linear2 = nn.Linear(12, 12)
         
     def forward(self, input_vec):
         x = self.linear1(input_vec)
-#         x = F.relu(x)
-#         x = self.linear2(x)
+        x = F.relu(x)
+        x = self.linear2(x)
         out = torch.sigmoid(x)
         
         return(out)
@@ -81,12 +81,6 @@ class Network(nn.Module):
         mean_combos = mean_combos.to(self.device1)
         
         out = self.ffn(mean_combos)
-        
-#         out = self.conv1(h_final)
-#         out = F.relu(out)
-#         out = self.conv2(out).squeeze()
-#         
-#         out = torch.sigmoid(torch.add(out, out.transpose(1, 2)) / 2)
         
         return out
     
