@@ -156,39 +156,6 @@ def select_chains(atomtypes, memberships, adjacency, target, chains):
     # Return a tuple of the selections in coordinate form
     return (sel_atomtypes, sel_memberships, sel_adjacency, sel_target)
 
-def utri_3d_to_1d(n_res, n_chan = 12):
-    """
-    Convert the upper triangular indices to a dictionary linking 3d position
-    to position within a 1d vector.
-    
-    Args:
-    - n_res (int) - The number of residues in the structure.
-    - n_chan (int) - The number of channels in the contact map.
-    
-    Returns:
-    - A tuple of the integer length of the vector and the mapping to create
-        the vector.
-    """
-    # Initialize the dictionary for the conversion
-    idx_map = {}
-    
-    # Start indexing at 0
-    idx = 0
-    
-    # Loop through the upper triangular indices
-    for i, j in zip(*np.triu_indices(n_res)):
-        
-        # Loop through the channels
-        for k in range(n_chan):
-            
-            # Add the link to the dictionary
-            idx_map[(i, j, k)] = idx
-            
-            # Increment the id
-            idx += 1
-            
-    # Return the length of the vector and the map
-    return (len(idx_map), idx_map)
 
 def utri_2d_to_1d(n_res):
     """
@@ -219,31 +186,6 @@ def utri_2d_to_1d(n_res):
         
     # Return the length of the vector and the map
     return (len(idx_map), idx_map)
-
-
-def make_vec_target(target_array, mem_array):
-    """
-    Make the target contact map into a non-redundant 1d target vector
-    
-    Args:
-    - target_array (numpy ndarray) - Target array in coordinate format.
-    - mem_array (numpy ndarray) - Membership array in coordinate format.
-    
-    Returns:
-    - A 1d PyTorch FloatTensor of the flattened prediction matrix (1x(n_res*12)). 
-    """
-    # Get the target length and coordinate mapping
-    target_len, target_map = utri_3d_to_1d(np.max(mem_array[:, 0]) + 1)
-    
-    # Initialize the target tensor
-    target = np.zeros(target_len, dtype=np.float32)
-    
-    # Get the selection of positive examples
-    sel = [target_map[(idx_row[1], idx_row[2], idx_row[0])] for idx_row in target_array]
-    
-    # Set the positive examples to 1 and return the target
-    target[sel] = 1
-    return target
 
 
 def make_mat_target(target_array, mem_array):
@@ -410,78 +352,4 @@ class TesselateDataset(Dataset):
         data_dict = process(entry, atomtypes, memberships, adjacency, target, self.feed_method)
         
         return data_dict
-        
-        
-class TesselateDaskDataset(object):
-    def __init__(self, accession_list, hdf5_dataset, feed_method='complete'):
-        
-        # Store reference to accession list file
-        self.accession_list = accession_list
-        
-        # Store reference to HDF5 data file
-        self.hdf5_dataset = hdf5_dataset
-        
-        # Store desired feed method
-        self.feed_method = feed_method
-        
-#         self.dataset = h5py.File(self.hdf5_dataset, 'r')
-        
-        self.client = None
-        
-        # Read in and store a list of accession IDs
-        with open(accession_list, 'r') as handle:
-            self.accessions = np.array([acc.strip().lower() for acc in handle.readlines()])
-        
-    def __len__(self):
-        """
-        Return the length of the dataset.
-        
-        Returns:
-        - Integer count of number of examples.
-        """
-        return len(self.accessions)
-    
-    def __getitem__(self, idx):
-        
-        # Get the entry PDB ID
-        entry = self.accessions[idx]
-        
-        if self.client is not None:
-            future = self.client.submit(process, entry, self.hdf5_dataset, self.feed_method)
-            return future
-        else:
-            data_dict = process(entry, self.hdf5_dataset, self.feed_method)
-            return data_dict
-    
-    
-class DataLoader(object):
-    def __init__(self, dataset, num_workers, shuffle=True):
-        self.dataset = dataset
-        self.cluster = LocalCluster(n_workers=4, diagnostics_port=8788)
-        self.client = Client(self.cluster)
-        self.shuffle = shuffle
-        dataset.client = self.client
-        self.futures = []
-        
-    def __len__(self):
-        return len(self.dataset)
-        
-    def __iter__(self):
-        order = list(range(len(self.dataset)))
-        
-        if self.shuffle:
-            random.shuffle(order)
-            
-        for i in order:
-            self.futures.append(self.dataset[i])
-        
-        return self
-
-    def __next__(self):
-        if len(self.futures) > 0:
-            future = self.futures.pop(0)
-            return future.result()
-        else:
-            raise StopIteration()
-        
         
