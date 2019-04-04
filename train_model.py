@@ -240,9 +240,12 @@ if __name__ == '__main__':
         if WANDB:
             torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'epoch_{}.pt'.format(epoch)))
             
-        for sample in tqdm(val_dataloader):
+        total_count = 0
+        total_loss = 0
+        
+        for sample in tqdm(val_loader):
             
-            total_count = 0
+            
             
             for idx in tqdm(range(len(sample['id'])), leave=False):
 
