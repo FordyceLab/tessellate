@@ -120,7 +120,10 @@ if __name__ == '__main__':
 #     queue = mp.Queue()
 #     p = mp.Pool(10, plot_worker, (queue,))
 
-    wandb.init(project='tesselate', config={'commit': repo.head.object.hexsha})
+    WANDB = True
+    
+    if WANDB:
+        wandb.init(project='tesselate', config={'commit': repo.head.object.hexsha})
     
     
     # Define the model parameters
@@ -135,7 +138,9 @@ if __name__ == '__main__':
 
     # Genetrate the model
     model = Network(INPUT_SIZE, GRAPH_CONV, cuda0, cuda1)
-    wandb.watch(model)
+    
+    if WANDB:
+        wandb.watch(model)
 
     # Generate the dataset/dataloader for training
     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', FEED)
@@ -193,9 +198,10 @@ if __name__ == '__main__':
                     out = model(adjacency, atomtypes, memberships, combos)
 
                     # Get the mean reduced loss
-#                     loss = F.binary_cross_entropy(out, target, reduction='mean')
-                    
+    #                     loss = F.binary_cross_entropy(out, target, reduction='mean')
+
                     # Get the frequency-adjusted loss
+                    loss = F.binary_cross_entropy(out, target, reduction='none')
                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2)
 
                     # Make the backward pass
@@ -205,23 +211,23 @@ if __name__ == '__main__':
                     opt.step()
 
                     # Get the summed loss
-#                     loss = F.binary_cross_entropy(out, target, reduction='sum')
+    #                     loss = F.binary_cross_entropy(out, target, reduction='sum')
 
 
                     # Get the total loss
                     total_loss += loss.data
                     total_count += target.shape[0] * target.shape[1]
-                    
+
                     step_loss += loss.data
                     step_count += target.shape[0] * target.shape[1]
                     step_iter += 1
-                    
+
                     if step_iter % 1000 == 0:
                         step_loss = step_loss / step_count
                         wandb.log({'step_loss': step_loss})
-                        
+
                         torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step)))
-                        
+
                         step_loss = 0
                         step_count = 0
                     
@@ -231,7 +237,8 @@ if __name__ == '__main__':
 
         train_loss = total_loss / total_count
         
-        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'epoch_{}.pt'.format(epoch)))
+        if WANDB:
+            torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'epoch_{}.pt'.format(epoch)))
             
         for sample in tqdm(val_dataloader):
             
@@ -280,8 +287,9 @@ if __name__ == '__main__':
                     continue
                 
         val_loss = total_loss / total_count
-                
-        wandb.log({'train_loss': train_loss, 'val_loss': val_loss})
+        
+        if WANDB:
+            wandb.log({'train_loss': train_loss, 'val_loss': val_loss})
 
     
 #     # Finish the plotting queue
