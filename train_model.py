@@ -1,6 +1,7 @@
 from git import Repo
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 import sys
 from tesselate.data import TesselateDataset, make_sparse_mat
 from tesselate.model import Network
@@ -151,7 +152,6 @@ if __name__ == '__main__':
     # Initialize the optimizer
     opt = optim.SGD(model.parameters(), lr = .01, momentum=0.9) #, weight_decay=1e-4)
 
-    
     step_iter = 0
     step_loss = 0
     step_count = 0
@@ -193,7 +193,11 @@ if __name__ == '__main__':
                     out = model(adjacency, atomtypes, memberships, combos)
 
                     # Get the mean reduced loss
-                    loss = F.binary_cross_entropy(out, target, reduction='mean')
+#                     loss = F.binary_cross_entropy(out, target, reduction='mean')
+                    
+                    # Get the frequency-adjusted loss
+                    loss = (torch.sum(loss * target) / torch.sum(target) +
+                            torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2))
 
                     # Make the backward pass
                     loss.backward()
@@ -202,10 +206,7 @@ if __name__ == '__main__':
                     opt.step()
 
                     # Get the summed loss
-                    loss = F.binary_cross_entropy(out, target, reduction='sum')
-
-                    # Get the frequency-adjusted loss
-                    #loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2)
+#                     loss = F.binary_cross_entropy(out, target, reduction='sum')
 
 
                     # Get the total loss
@@ -220,7 +221,8 @@ if __name__ == '__main__':
                         step_loss = step_loss / step_count
                         wandb.log({'step_loss': step_loss})
                         
-                        step_iter = 0
+                        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step))
+                        
                         step_loss = 0
                         step_count = 0
                     
@@ -230,7 +232,7 @@ if __name__ == '__main__':
 
         train_loss = total_loss / total_count
         
-        torch.save(model.state_dict(), wandb.run.dir)
+        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'epoch_{}.pt'.format(epoch))
             
         for sample in tqdm(val_dataloader):
             
@@ -261,7 +263,9 @@ if __name__ == '__main__':
                     out = model(adjacency, atomtypes, memberships, combos)
 
                     # Get the summed loss
-                    loss = F.binary_cross_entropy(out, target, reduction='sum')
+#                     loss = F.binary_cross_entropy(out, target, reduction='sum')
+                   loss = (torch.sum(loss * target) / torch.sum(target) +
+                            torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2))
 
                     # Get the total loss
                     total_loss += loss.data
