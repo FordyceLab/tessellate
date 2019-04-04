@@ -155,7 +155,7 @@ if __name__ == '__main__':
     
 
     # Initialize the optimizer
-    opt = optim.SGD(model.parameters(), lr = .01, momentum=0.9) #, weight_decay=1e-4)
+    opt = optim.SGD(model.parameters(), lr = .001, momentum=0.9) #, weight_decay=1e-4)
 
     step_iter = 0
     step_loss = 0

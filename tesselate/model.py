@@ -52,7 +52,7 @@ class Network(nn.Module):
         
         self.embedding = nn.Embedding(116,
                                       input_size,
-                                      scale_grad_by_freq=True)
+                                      scale_grad_by_freq=False)
         
         self.n_conv = n_conv
         
@@ -60,9 +60,6 @@ class Network(nn.Module):
         
         
         self.ffn = FFN(input_size).to(device1)
-        
-        self.conv1 = nn.Conv2d(input_size, 4, 3, stride=1, padding=1).to(device1)
-        self.conv2 = nn.Conv2d(4, 12, 3, stride=1, padding=1).to(device1)
         
         
     def forward(self, adjacency, atoms, membership, combos):
