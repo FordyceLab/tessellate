@@ -202,7 +202,7 @@ if __name__ == '__main__':
 
                     # Get the frequency-adjusted loss
                     loss = F.binary_cross_entropy(out, target, reduction='none')
-                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2)
+                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
 
                     # Make the backward pass
                     loss.backward()
