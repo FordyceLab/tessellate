@@ -245,8 +245,6 @@ if __name__ == '__main__':
         
         for sample in tqdm(val_loader):
             
-            
-            
             for idx in tqdm(range(len(sample['id'])), leave=False):
 
                 # Extract the data and convert to appropriate tensor format
@@ -273,7 +271,7 @@ if __name__ == '__main__':
 
                     # Get the summed loss
 #                     loss = F.binary_cross_entropy(out, target, reduction='sum')
-                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2)
+                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
 
                     # Get the total loss
                     total_loss += loss.data
