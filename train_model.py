@@ -222,14 +222,14 @@ if __name__ == '__main__':
                     step_count += target.shape[0] * target.shape[1]
                     step_iter += 1
 
-                    if step_iter % 100 == 0:
+                    if step_iter % 1000 == 0:
                         step_loss = step_loss / step_count
                         wandb.log({'step_loss': step_loss})
 
                         step_loss = 0
                         step_count = 0
                         
-                        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step)))
+                        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step_iter)))
                     
                 except RuntimeError:
                     continue
