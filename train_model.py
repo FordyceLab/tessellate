@@ -221,7 +221,7 @@ if __name__ == '__main__':
                         step_loss = step_loss / step_count
                         wandb.log({'step_loss': step_loss})
                         
-                        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step))
+                        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step)))
                         
                         step_loss = 0
                         step_count = 0
@@ -232,7 +232,7 @@ if __name__ == '__main__':
 
         train_loss = total_loss / total_count
         
-        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'epoch_{}.pt'.format(epoch))
+        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'epoch_{}.pt'.format(epoch)))
             
         for sample in tqdm(val_dataloader):
             
