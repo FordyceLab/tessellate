@@ -216,10 +216,10 @@ if __name__ == '__main__':
 
                     # Get the total loss
                     total_loss += loss.data
-                    total_count += target.shape[0] * target.shape[1]
+                    total_count += 1
 
                     step_loss += loss.data
-                    step_count += target.shape[0] * target.shape[1]
+                    step_count += 1
                     step_iter += 1
 
                     if step_iter % 1000 == 0:
@@ -275,7 +275,7 @@ if __name__ == '__main__':
 
                     # Get the total loss
                     total_loss += loss.data
-                    total_count += target.shape[0] * target.shape[1]
+                    total_count += 1
 
                     # Extract data for plotting
 #                     pdb_id = sample['id'][idx]
@@ -284,7 +284,7 @@ if __name__ == '__main__':
                     
 #                     queue.put((pdb_id, target, out, epoch))
                 
-                except:
+                except RuntimeError:
                     continue
                 
         val_loss = total_loss / total_count
