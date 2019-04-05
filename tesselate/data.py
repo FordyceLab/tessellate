@@ -301,7 +301,7 @@ class TesselateDataset(Dataset):
             'atomtypes': atomtype_list,
             'memberships': membership_list,
             'adjacency': adjacency_list,
-            'target': target_list
+            'target': [target.astype(np.float) for target in target_list]
         }
 
         # Return the data for training
