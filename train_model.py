@@ -109,9 +109,9 @@ if __name__ == '__main__':
     # Since we are logging git commits to track model changes over time
     repo = Repo('.')
     
-    print([item.a_path for item in repo.index.diff('HEAD^')])
+    changed = [item.a_path for item in repo.index.diff(None) if path in repo.untracked_files]
     
-    if len(repo.index.diff('HEAD^')) > 0:
+    if len(changed) > 0:
         print("Git repo is dirty, please commit changes before training model.")
         sys.exit(1)
     
