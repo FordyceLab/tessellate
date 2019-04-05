@@ -213,6 +213,23 @@ def make_mat_target(target_array, mem_array):
     return target
 
 
+def read_data(dataset, entry):
+
+    # Read the data from the HDF5 file
+    atomtypes = dataset[entry]['atomtypes'][:].astype(np.int64)
+    memberships = dataset[entry]['memberships'][:]
+    adjacency = dataset[entry]['adjacency'][:]
+
+    # Handle the target slightly differently
+    # Rearrange columns
+    target = dataset[entry]['target'][:][:, [2, 0, 1]]
+
+    # Subtract 3 (because first 3 channels are dropped in the target)
+    target[:, 0] = target[:, 0] - 3
+    
+    return (atomtypes, memberships, adjacency, target)
+
+
 def process(entry, atomtypes, memberships, adjacency, target, feed_method):
     
     # Extract the unique chains in the structure
