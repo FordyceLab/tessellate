@@ -127,8 +127,8 @@ if __name__ == '__main__':
     
     
     # Define the model parameters
-    INPUT_SIZE = 10
-    GRAPH_CONV = 15
+    INPUT_SIZE = 20
+    GRAPH_CONV = 10
     FEED = 'complete'
     
     # Get references to the different devices
@@ -155,7 +155,7 @@ if __name__ == '__main__':
     
 
     # Initialize the optimizer
-    opt = optim.SGD(model.parameters(), lr = .001, momentum=0.9) #, weight_decay=1e-4)
+    opt = optim.SGD(model.parameters(), lr = .005, momentum=0.9) #, weight_decay=1e-4)
 
     step_iter = 0
     step_loss = 0
