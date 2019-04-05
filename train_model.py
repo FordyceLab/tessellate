@@ -109,6 +109,8 @@ if __name__ == '__main__':
     # Since we are logging git commits to track model changes over time
     repo = Repo('.')
     
+    print([item.a_path for item in repo.index.diff('HEAD')])
+    
     if len(repo.index.diff('HEAD^')) > 0:
         print("Git repo is dirty, please commit changes before training model.")
         sys.exit(1)
@@ -177,23 +179,16 @@ if __name__ == '__main__':
                 atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
                 adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
                 memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
-                target = torch.from_numpy(sample['target'][idx])
-                
-                combos = torch.from_numpy(sample['combos'][idx])
-                
-                combos = torch.sparse.FloatTensor(combos.t(),
-                                                  torch.ones(len(combos)) * 0.5,
-                                                  torch.Size((len(combos), len(memberships))))                
+                target = torch.from_numpy(sample['target'][idx])              
 
                 # Move the data to the appropriate device
                 adjacency = adjacency.float().to(cuda0)
                 memberships = memberships.float().to(cuda0)
                 target = target.float().to(cuda1)
-                combos = combos.float().to(cuda0)
 
                 try:
                     # Make the prediction
-                    out = model(adjacency, atomtypes, memberships, combos)
+                    out = model(adjacency, atomtypes, memberships)
 
                     # Get the mean reduced loss
     #                     loss = F.binary_cross_entropy(out, target, reduction='mean')
@@ -251,21 +246,14 @@ if __name__ == '__main__':
                 memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
                 target = torch.from_numpy(sample['target'][idx])
                 
-                combos = torch.from_numpy(sample['combos'][idx])
-                
-                combos = torch.sparse.FloatTensor(combos.t(),
-                                                  torch.ones(len(combos)) * 0.5,
-                                                  torch.Size((len(combos), len(memberships))))
-                
                 # Move the data to the appropriate device
                 adjacency = adjacency.float().to(cuda0)
                 memberships = memberships.float().to(cuda0)
                 target = target.float().to(cuda1)
-                combos = combos.float().to(cuda0)
                 
                 try:
                     # Make the prediction
-                    out = model(adjacency, atomtypes, memberships, combos)
+                    out = model(adjacency, atomtypes, memberships)
 
                     # Get the summed loss
 #                     loss = F.binary_cross_entropy(out, target, reduction='sum')
