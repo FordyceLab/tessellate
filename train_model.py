@@ -108,7 +108,8 @@ if __name__ == '__main__':
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
     repo = Repo('.')
-    if repo.is_dirty():
+    
+    if len(repo.index.diff('HEAD^')) > 0:
         print("Git repo is dirty, please commit changes before training model.")
         sys.exit(1)
     
