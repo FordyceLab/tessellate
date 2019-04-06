@@ -1,6 +1,7 @@
 from git import Repo
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 import sys
 from tesselate.data import TesselateDataset, make_sparse_mat
 from tesselate.model import Network
