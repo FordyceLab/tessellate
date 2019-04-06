@@ -179,7 +179,7 @@ if __name__ == '__main__':
                 atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
                 adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
                 memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
-                target = torch.from_numpy(sample['target'][idx])              
+                target = make_sparse_mat(sample['target'][idx], 'tar', np.max(sample['memberships'][idx]) + 1)
 
                 # Move the data to the appropriate device
                 adjacency = adjacency.float().to(cuda0)
