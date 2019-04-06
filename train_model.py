@@ -186,7 +186,7 @@ if __name__ == '__main__':
                 # Make the prediction
                 try:
                     # Make the prediction
-                    out = model(adjacency, atomtypes, memberships, combos)
+                    out = model(adjacency, atomtypes, memberships)
 
                     # Get the mean reduced loss
     #                     loss = F.binary_cross_entropy(out, target, reduction='mean')
@@ -248,11 +248,10 @@ if __name__ == '__main__':
                 adjacency = adjacency.float().to(cuda0)
                 memberships = memberships.float().to(cuda0)
                 target = target.float().to(cuda1)
-                combos = combos.float().to(cuda0)
                 
                 try:
                     # Make the prediction
-                    out = model(adjacency, atomtypes, memberships, combos)
+                    out = model(adjacency, atomtypes, memberships)
 
                     # Get the summed loss
 #                     loss = F.binary_cross_entropy(out, target, reduction='sum')
