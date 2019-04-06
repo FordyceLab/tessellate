@@ -121,56 +121,57 @@ def make_sparse_mat(idx_mat, mat_type, count=None):
 def select_chains(atomtypes, memberships, adjacency, target, chains):
     """
     Select a subset of chains from the dataset encoding the entire structure.
-    
+
     Args:
     - atomtypes (numpy ndarray) - ndarray representing the atomtypes
     - memberships (numpy ndarray) - ndarray representing the memberships
     - adjacency (numpy ndarray) - ndarray representing the adjacency matrix
     - target (numpy ndarray) - Dense ndarray representing the target
     - chains (list) - List of chains in selection
-    
+
     Returns:
-    - A tuple of dense ndarrays for the selection (atomtypes, memberships, adjacency, target)
+    - A tuple of dense ndarrays for the selection (atomtypes, memberships, adjacency, target).
     """
-    
+
     # Hard code the column positions of the chain, residue, and atom identifiers in the atomtypes dataset.
     CHAIN_IDX = 0
     RESIDUE_IDX = 1
     ATOM_IDX = 2
-    
+
     # Select the atomtypes
-    sel_atomtypes = np.array([row for row in atomtypes if row[CHAIN_IDX] in chains])
-    
+    sel_atomtypes = atomtypes[np.isin(atomtypes[:, CHAIN_IDX], chains), :]
+
     # Select the unique chains, residues, and atoms
     sel_chains = np.unique(sel_atomtypes[:, CHAIN_IDX])
     sel_residues = np.unique(sel_atomtypes[:, RESIDUE_IDX])
     sel_atoms = np.unique(sel_atomtypes[:, ATOM_IDX])
-    
+
     # Select the pertinent information from the coordinate matrices
     #### NOTE: adjacency matrix may not be correct, may have to recompute for the smaller number of atoms when performing chain selection
-    sel_adjacency = adjacency[[adjacency[i, 0] in sel_atoms and adjacency[i, 1] in sel_atoms for i in range(len(adjacency))]]
-    sel_memberships = memberships[[memberships[i, 0] in sel_residues and memberships[i, 1] in sel_atoms for i in range(len(memberships))]]
-    sel_target = target[[target[i, 1] in sel_residues and target[i, 2] in sel_residues for i in range(len(target))]]
-    
+    sel_adjacency = adjacency[np.isin(adjacency[:, 0], sel_atoms) & np.isin(adjacency[:, 1], sel_atoms), :]
+    sel_memberships = memberships[np.isin(memberships[:, 0], sel_residues) &
+                                  np.isin(memberships[:, 1], sel_atoms), :]
+    sel_target = target[np.isin(target[:, 1], sel_residues) & np.isin(target[:, 2], sel_residues), :]
+
     # Handle renumbering of atoms and residues
     chain_remap = {orig_number: idx for idx, orig_number in enumerate(np.sort(sel_chains))}
     res_remap = {orig_number: idx for idx, orig_number in enumerate(np.sort(sel_residues))}
     atom_remap = {orig_number: idx for idx, orig_number in enumerate(np.sort(sel_atoms))}
-    
+
     # Perform all remappings
     sel_atomtypes[:, CHAIN_IDX] = [chain_remap[i] for i in sel_atomtypes[:, CHAIN_IDX]]
     sel_atomtypes[:, RESIDUE_IDX] = [res_remap[i] for i in sel_atomtypes[:, RESIDUE_IDX]]
     sel_atomtypes[:, ATOM_IDX] = [atom_remap[i] for i in sel_atomtypes[:, ATOM_IDX]]
-    
+
     sel_adjacency[:, 0] = [atom_remap[i] for i in sel_adjacency[:, 0]]
     sel_adjacency[:, 1] = [atom_remap[i] for i in sel_adjacency[:, 1]]
-    
+
     sel_memberships[:, 0] = [res_remap[i] for i in sel_memberships[:, 0]]
     sel_memberships[:, 1] = [atom_remap[i] for i in sel_memberships[:, 1]]
-    
+
     sel_target[:, 1] = [res_remap[i] for i in sel_target[:, 1]]
     sel_target[:, 2] = [res_remap[i] for i in sel_target[:, 2]]
-    
+
     # Return a tuple of the selections in coordinate form
     return (sel_atomtypes, sel_memberships, sel_adjacency, sel_target)
 
