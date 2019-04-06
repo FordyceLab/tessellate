@@ -146,7 +146,7 @@ if __name__ == '__main__':
                             collate_fn=dict_collate)
 
     val_data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/validation_ids.txt', 'data/contacts.hdf5', FEED)
-    val_loader = DataLoader(val_data, batch_size=1, shuffle=True,
+    val_loader = DataLoader(val_data, batch_size=1, shuffle=False,
                             num_workers=0, pin_memory=False,
                             collate_fn=dict_collate)
     
@@ -242,13 +242,7 @@ if __name__ == '__main__':
                 atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
                 adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
                 memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
-                target = torch.from_numpy(sample['target'][idx])
-                
-                combos = torch.from_numpy(sample['combos'][idx])
-                
-                combos = torch.sparse.FloatTensor(combos.t(),
-                                                  torch.ones(len(combos)) * 0.5,
-                                                  torch.Size((len(combos), len(memberships))))
+                target = make_sparse_mat(sample['target'][idx], 'tar', int(np.max(sample['memberships'][idx][:, 0]) + 1)).to_dense()
                 
                 # Move the data to the appropriate device
                 adjacency = adjacency.float().to(cuda0)
