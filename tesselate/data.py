@@ -117,6 +117,11 @@ def make_sparse_mat(idx_mat, mat_type, count=None):
     out_mat = torch.sparse.FloatTensor(idx.t(), val, size)
     return(out_mat)
 
+def mirror_target(target):
+    lower_tri = target[:, [0, 2, 1]]
+    lower_tri = lower_tri[target[:, 1] != target[:, 2]]
+    return np.vstack((target, lower_tri))
+
 
 def select_chains(atomtypes, memberships, adjacency, target, chains):
     """
@@ -302,7 +307,7 @@ class TesselateDataset(Dataset):
             'atomtypes': atomtype_list,
             'memberships': membership_list,
             'adjacency': adjacency_list,
-            'target': target_list
+            'target': [mirror_target(target) for target in target_list]
         }
 
         # Return the data for training

@@ -6,8 +6,6 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-import time
-
 
 class GGNUnit(nn.Module):
     def __init__(self, input_size):
@@ -47,8 +45,6 @@ class Network(nn.Module):
         
     def forward(self, adjacency, atoms, membership):
         
-        start = time.time()
-        
         x_in = self.embedding(atoms).to(self.device0)
         
         hidden_states = []
@@ -64,10 +60,6 @@ class Network(nn.Module):
         
         h_final = (torch.add(h_final, h_final.transpose(0, 1)) / 2).view(1, self.input_size, int(orig_dim[0]), int(orig_dim[0]))
         
-        end = time.time()
-#         print('\nGraph conv: {}'.format(end - start))
-        start = time.time()
-        
         h_final = h_final.to(self.device1)
         
         out = self.conv1(h_final)
@@ -77,9 +69,6 @@ class Network(nn.Module):
         out = self.conv3(out).squeeze()
         
         out = torch.sigmoid(torch.add(out, out.transpose(1, 2)) / 2)
-        
-        end = time.time()
-#         print('2D conv: {}'.format(end - start))
         
         return out
     
