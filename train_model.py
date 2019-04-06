@@ -100,26 +100,32 @@ def plot_worker(queue):
         # Get the next example
         example = queue.get()
     
-
+def dict_collate(batch):
+    return batch[0]
 
 if __name__ == '__main__':
     
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
-#     if Repo('.').is_dirty():
-#         print("Git repo is dirty, please commit changes before training model.")
-#         sys.exit(1)
+    repo = Repo('.')
+    if repo.is_dirty():
+        print("Git repo is dirty, please commit changes before training model.")
+        sys.exit(1)
     
     # Initialize the multiprocessing capabilities for plotting
 #     multiprocessing.set_start_method('spawn')
 #     queue = mp.Queue()
 #     p = mp.Pool(10, plot_worker, (queue,))
 
-    torch.backends.cudnn.benchmark = True
+    WANDB = True
+    
+    if WANDB:
+        wandb.init(project='tesselate', config={'commit': repo.head.object.hexsha})
+    
     
     # Define the model parameters
-    INPUT_SIZE = 25
-    GRAPH_CONV = 5
+    INPUT_SIZE = 20
+    GRAPH_CONV = 10
     FEED = 'complete'
     
     # Get references to the different devices
@@ -128,28 +134,40 @@ if __name__ == '__main__':
     cpu = torch.device('cpu')
 
     # Genetrate the model
-    model = Network(INPUT_SIZE, 7, cuda0, cuda1)
+    model = Network(INPUT_SIZE, GRAPH_CONV, cuda0, cuda1)
+    
+    if WANDB:
+        wandb.watch(model)
 
     # Generate the dataset/dataloader for training
     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', FEED)
-    dataloader = DataLoader(data, batch_size=1, shuffle=False,
-                            num_workers=1000, pin_memory=True,
-                            collate_fn=lambda b: b[0])
+    dataloader = DataLoader(data, batch_size=1, shuffle=True,
+                            num_workers=0, pin_memory=False,
+                            collate_fn=dict_collate)
+
+    val_data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/validation_ids.txt', 'data/contacts.hdf5', FEED)
+    val_loader = DataLoader(val_data, batch_size=1, shuffle=True,
+                            num_workers=0, pin_memory=False,
+                            collate_fn=dict_collate)
+    
 
     # Initialize the optimizer
-    opt = optim.SGD(model.parameters(), lr = .01, momentum=0.9) #, weight_decay=1e-4)
+    opt = optim.SGD(model.parameters(), lr = .005, momentum=0.9) #, weight_decay=1e-4)
 
+    step_iter = 0
+    step_loss = 0
+    step_count = 0
+    
     # Train for N epochs
-    for epoch in trange(10000):
+    for epoch in trange(1000, leave=False):
         
         # Sum the total loss
         total_loss = 0
+        total_count = 0
 
         # For each sample in each example, train the model
-        for sample in tqdm(dataloader):
+        for sample in tqdm(dataloader, leave=False):
             for idx in tqdm(range(len(sample['id'])), leave=False):
-
-                start = time.time()
 
                 # Zero the gradient
                 opt.zero_grad()
@@ -167,57 +185,108 @@ if __name__ == '__main__':
 
                 # Make the prediction
                 try:
-                    out = model(adjacency, atomtypes, memberships)
+                    # Make the prediction
+                    out = model(adjacency, atomtypes, memberships, combos)
+
+                    # Get the mean reduced loss
+    #                     loss = F.binary_cross_entropy(out, target, reduction='mean')
+
+                    # Get the frequency-adjusted loss
+                    loss = F.binary_cross_entropy(out, target, reduction='none')
+                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+
+                    # Make the backward pass
+                    loss.backward()
+
+                    # Step the optimizer
+                    opt.step()
+
+                    # Get the summed loss
+    #                     loss = F.binary_cross_entropy(out, target, reduction='sum')
+
+
+                    # Get the total loss
+                    total_loss += loss.data
+                    total_count += 1
+
+                    step_loss += loss.data
+                    step_count += 1
+                    step_iter += 1
+
+                    if step_iter % 1000 == 0:
+                        step_loss = step_loss / step_count
+                        wandb.log({'step_loss': step_loss})
+
+                        step_loss = 0
+                        step_count = 0
+                        
+                        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step_iter)))
+                    
+                except RuntimeError:
+                    continue
+                    
+
+        train_loss = total_loss / total_count
+        
+        if WANDB:
+            torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'epoch_{}.pt'.format(epoch)))
+            
+        total_count = 0
+        total_loss = 0
+        
+        for sample in tqdm(val_loader):
+            
+            for idx in tqdm(range(len(sample['id'])), leave=False):
+
+                # Extract the data and convert to appropriate tensor format
+                atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
+                adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
+                memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
+                target = torch.from_numpy(sample['target'][idx])
                 
-                except:
-                    print(sample['id'])
-
-                # Get the mean reduced loss
-#                 loss = F.binary_cross_entropy(out, target, reduction='mean')
-
-                # Get the summed loss
-                loss = F.binary_cross_entropy(out, target)
-
-                # Get the frequency-adjusted loss
-                loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2)
-
-                # Make the backward pass
-                loss.backward()
+                combos = torch.from_numpy(sample['combos'][idx])
                 
-                # Step the optimizer
-                opt.step()
+                combos = torch.sparse.FloatTensor(combos.t(),
+                                                  torch.ones(len(combos)) * 0.5,
+                                                  torch.Size((len(combos), len(memberships))))
+                
+                # Move the data to the appropriate device
+                adjacency = adjacency.float().to(cuda0)
+                memberships = memberships.float().to(cuda0)
+                target = target.float().to(cuda1)
+                combos = combos.float().to(cuda0)
+                
+                try:
+                    # Make the prediction
+                    out = model(adjacency, atomtypes, memberships, combos)
 
-                update_end = time.time()
-#                     print('Update: {}'.format(update_end - update_start))
+                    # Get the summed loss
+#                     loss = F.binary_cross_entropy(out, target, reduction='sum')
+                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
 
-                # Get the total loss
-                total_loss += loss.data
+                    # Get the total loss
+                    total_loss += loss.data
+                    total_count += 1
 
-                # Extract data for plotting
-                pdb_id = sample['id'][idx]
-                out = out.data.to(cpu).numpy()
-                target = target.to(cpu).numpy()
-
-                # Add plots to the mp queue
-#                 if epoch % 50 == 0:
+                    # Extract data for plotting
+#                     pdb_id = sample['id'][idx]
+#                     out = out.data.to(cpu).numpy()
+#                     target = target.to(cpu).numpy()
+                    
 #                     queue.put((pdb_id, target, out, epoch))
+                
+                except RuntimeError:
+                    continue
+                
+        val_loss = total_loss / total_count
+        
+        if WANDB:
+            wandb.log({'train_loss': train_loss, 'val_loss': val_loss})
 
-#                     del (adjacency, 
-#                          atomtypes, 
-#                          memberships, 
-#                          target,
-#                          out,
-#                          loss)
-
-#                     torch.cuda.empty_cache()
-#                 tqdm.write(float(loss))
-
-#         if epoch % 10 == 0:
-        print('Epoch: {}, Loss: {:02f}'.format(epoch, float(total_loss) / 10))
     
-    # Finish the plotting queue
-    queue.put('plot_complete')
-    queue.close()
-    queue.join_thread()
-    p.join()
+#     # Finish the plotting queue
+#     queue.put('plot_complete')
+#     queue.close()
+#     queue.join_thread()
+#     p.join()
                 
