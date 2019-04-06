@@ -115,11 +115,12 @@ if __name__ == '__main__':
 #     queue = mp.Queue()
 #     p = mp.Pool(10, plot_worker, (queue,))
 
+    torch.backends.cudnn.benchmark = True
     
     # Define the model parameters
     INPUT_SIZE = 25
     GRAPH_CONV = 5
-    FEED = 'single_chain'
+    FEED = 'complete'
     
     # Get references to the different devices
     cuda0 = torch.device('cuda:0')
@@ -131,7 +132,7 @@ if __name__ == '__main__':
 
     # Generate the dataset/dataloader for training
     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', FEED)
-    dataloader = DataLoader(data, batch_size=1, shuffle=True,
+    dataloader = DataLoader(data, batch_size=1, shuffle=False,
                             num_workers=1000, pin_memory=True,
                             collate_fn=lambda b: b[0])
 
