@@ -152,7 +152,6 @@ if __name__ == '__main__':
     val_loader = DataLoader(val_data, batch_size=1, shuffle=True,
                             num_workers=0, pin_memory=False,
                             collate_fn=dict_collate)
-    
 
     # Initialize the optimizer
     opt = optim.SGD(model.parameters(), lr = .005, momentum=0.9) #, weight_decay=1e-4)
@@ -179,7 +178,6 @@ if __name__ == '__main__':
                 atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
                 adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
                 memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
-                target = make_sparse_mat(sample['target'][idx], 'tar', np.max(sample['memberships'][idx]) + 1)
 
                 # Move the data to the appropriate device
                 adjacency = adjacency.float().to(cuda0)
