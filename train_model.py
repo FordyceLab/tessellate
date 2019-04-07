@@ -114,9 +114,9 @@ if __name__ == '__main__':
         sys.exit(1)
     
     # Initialize the multiprocessing capabilities for plotting
-#     multiprocessing.set_start_method('spawn')
-#     queue = mp.Queue()
-#     p = mp.Pool(10, plot_worker, (queue,))
+    multiprocessing.set_start_method('spawn')
+    queue = mp.Queue()
+    p = mp.Pool(10, plot_worker, (queue,))
 
     WANDB = True
     
@@ -250,12 +250,12 @@ if __name__ == '__main__':
                     adjacency = adjacency.float().to(cuda0)
                     memberships = memberships.float().to(cuda0)
                     target = target.float().to(cuda1)
-                
+
                     # Make the prediction
                     out = model(adjacency, atomtypes, memberships)
 
-                    # Get the summed loss
-#                     loss = F.binary_cross_entropy(out, target, reduction='sum')
+                    # Get the loss
+                    loss = F.binary_cross_entropy(out, target, reduction='none')
                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
 
                     # Get the total loss
@@ -263,11 +263,11 @@ if __name__ == '__main__':
                     total_count += 1
 
                     # Extract data for plotting
-#                     pdb_id = sample['id'][idx]
-#                     out = out.data.to(cpu).numpy()
-#                     target = target.to(cpu).numpy()
-                    
-#                     queue.put((pdb_id, target, out, epoch))
+                    pdb_id = sample['id'][idx]
+                    out = out.data.to(cpu).numpy()
+                    target = target.to(cpu).numpy()
+
+                    queue.put((pdb_id, target, out, epoch))
                 
                 except RuntimeError:
                     continue
@@ -278,9 +278,9 @@ if __name__ == '__main__':
             wandb.log({'train_loss': train_loss, 'val_loss': val_loss})
 
     
-#     # Finish the plotting queue
-#     queue.put('plot_complete')
-#     queue.close()
-#     queue.join_thread()
-#     p.join()
+    # Finish the plotting queue
+    queue.put('plot_complete')
+    queue.close()
+    queue.join_thread()
+    p.join()
                 
