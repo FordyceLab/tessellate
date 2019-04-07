@@ -188,6 +188,10 @@ if __name__ == '__main__':
                 
                     # Make the prediction
                     out = model(adjacency, atomtypes, memberships)
+                    
+                    print(out)
+                    
+                    print(target)
 
                     # Get the mean reduced loss
     #                     loss = F.binary_cross_entropy(out, target, reduction='mean')

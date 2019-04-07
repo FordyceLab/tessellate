@@ -307,7 +307,7 @@ class TesselateDataset(Dataset):
             'atomtypes': atomtype_list,
             'memberships': membership_list,
             'adjacency': adjacency_list,
-            'target': [mirror_target(target) for target in target_list]
+            'target': target_list
         }
 
         # Return the data for training
