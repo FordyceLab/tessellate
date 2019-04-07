@@ -179,13 +179,13 @@ if __name__ == '__main__':
                 memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
                 target = make_sparse_mat(sample['target'][idx], 'tar', int(np.max(sample['memberships'][idx][:, 0]) + 1)).to_dense()
 
-                # Move the data to the appropriate device
-                adjacency = adjacency.float().to(cuda0)
-                memberships = memberships.float().to(cuda0)
-                target = target.float().to(cuda1)
-
-                # Make the prediction
+                
                 try:
+                    # Move the data to the appropriate device
+                    adjacency = adjacency.float().to(cuda0)
+                    memberships = memberships.float().to(cuda0)
+                    target = target.float().to(cuda1)
+                
                     # Make the prediction
                     out = model(adjacency, atomtypes, memberships)
 
@@ -245,12 +245,12 @@ if __name__ == '__main__':
                 memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
                 target = make_sparse_mat(sample['target'][idx], 'tar', int(np.max(sample['memberships'][idx][:, 0]) + 1)).to_dense()
                 
-                # Move the data to the appropriate device
-                adjacency = adjacency.float().to(cuda0)
-                memberships = memberships.float().to(cuda0)
-                target = target.float().to(cuda1)
-                
                 try:
+                    # Move the data to the appropriate device
+                    adjacency = adjacency.float().to(cuda0)
+                    memberships = memberships.float().to(cuda0)
+                    target = target.float().to(cuda1)
+                
                     # Make the prediction
                     out = model(adjacency, atomtypes, memberships)
 
