@@ -115,8 +115,6 @@ if __name__ == '__main__':
     
     # Initialize the multiprocessing capabilities for plotting
     multiprocessing.set_start_method('spawn')
-    queue = mp.Queue()
-    p = mp.Pool(10, plot_worker, (queue,))
 
     WANDB = True
     
@@ -235,6 +233,9 @@ if __name__ == '__main__':
         total_count = 0
         total_loss = 0
         
+        queue = mp.Queue()
+        p = mp.Pool(10, plot_worker, (queue,))
+        
         for sample in tqdm(val_loader):
             
             for idx in tqdm(range(len(sample['id'])), leave=False):
@@ -277,10 +278,10 @@ if __name__ == '__main__':
         if WANDB:
             wandb.log({'train_loss': train_loss, 'val_loss': val_loss})
 
-    
-    # Finish the plotting queue
-    queue.put('plot_complete')
-    queue.close()
-    queue.join_thread()
-    p.join()
-                
+        # Finish the plotting queue
+        queue.put('plot_complete')
+        queue.close()
+        queue.join_thread()
+        p.close()
+        p.terminate()
+        
