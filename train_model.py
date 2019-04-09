@@ -7,7 +7,7 @@ from tesselate.data import TesselateDataset, make_sparse_mat
 from tesselate.model import Network
 import torch
 import torch.multiprocessing as multiprocessing 
-import multiprocessing as mp
+from multiprocessing import Process
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -77,29 +77,6 @@ def plot_channels(pdb_id, target, out, epoch):
     # Save the plot to the figures directory
     plt.savefig('figs/{}_{:06d}.png'.format(pdb_id, epoch))
     plt.close()
-    
-    
-def plot_worker(queue):
-    """
-    Helper function to draw plotting examples from a queue and plot them.
-    
-    Args:
-    - 
-    """
-    # Draw an example from the queue
-    example = queue.get()
-    
-    # Keep drawing until queue is complete
-    while example != 'plot_complete':
-        
-        # Make sure that the example contains 4 datasets
-        if len(example) == 4:
-            
-            # Make the plots in parallel
-            plot_channels(*example)
-        
-        # Get the next example
-        example = queue.get()
     
 def dict_collate(batch):
     return batch[0]
@@ -233,9 +210,6 @@ if __name__ == '__main__':
         total_count = 0
         total_loss = 0
         
-        queue = mp.Queue()
-        p = mp.Pool(10, plot_worker, (queue,))
-        
         for sample in tqdm(val_loader):
             
             for idx in tqdm(range(len(sample['id'])), leave=False):
@@ -268,7 +242,8 @@ if __name__ == '__main__':
                     out = out.data.to(cpu).numpy()
                     target = target.to(cpu).numpy()
 
-                    queue.put((pdb_id, target, out, epoch))
+                    p = Process(target=plot_channels, args=(pdb_id, target, out, epoch))
+                    p.start()
                 
                 except RuntimeError:
                     continue
@@ -277,11 +252,4 @@ if __name__ == '__main__':
         
         if WANDB:
             wandb.log({'train_loss': train_loss, 'val_loss': val_loss})
-
-        # Finish the plotting queue
-        queue.put('plot_complete')
-        queue.close()
-        queue.join_thread()
-        p.close()
-        p.terminate()
         
