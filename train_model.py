@@ -1,13 +1,13 @@
 from git import Repo
 import matplotlib.pyplot as plt
 import numpy as np
-import ray
+import os
 import sys
 from tesselate.data import TesselateDataset, make_sparse_mat
 from tesselate.model import Network
 import torch
 import torch.multiprocessing as multiprocessing 
-import multiprocessing as mp
+from multiprocessing import Process
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -15,9 +15,6 @@ from torch.utils.data import DataLoader
 from tqdm import *
 import time
 import wandb
-
-#multiprocessing.set_sharing_strategy('file_system')
-# multiprocessing.set_sharing_strategy('file_descriptor')
 
 
 def plot_channels(pdb_id, target, out, epoch):
@@ -81,29 +78,6 @@ def plot_channels(pdb_id, target, out, epoch):
     plt.savefig('figs/{}_{:06d}.png'.format(pdb_id, epoch))
     plt.close()
     
-    
-def plot_worker(queue):
-    """
-    Helper function to draw plotting examples from a queue and plot them.
-    
-    Args:
-    - 
-    """
-    # Draw an example from the queue
-    example = queue.get()
-    
-    # Keep drawing until queue is complete
-    while example != 'plot_complete':
-        
-        # Make sure that the example contains 4 datasets
-        if len(example) == 4:
-            
-            # Make the plots in parallel
-            plot_channels(*example)
-        
-        # Get the next example
-        example = queue.get()
-    
 def dict_collate(batch):
     return batch[0]
 
@@ -111,19 +85,23 @@ if __name__ == '__main__':
     
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
-    #if Repo('.').is_dirty():
-    #    print("Git repo is dirty, please commit changes before training model.")
-    #    sys.exit(1)
+    repo = Repo('.')
+    if repo.is_dirty():
+        print("Git repo is dirty, please commit changes before training model.")
+        sys.exit(1)
     
     # Initialize the multiprocessing capabilities for plotting
-#     multiprocessing.set_start_method('spawn')
-#     queue = mp.Queue()
-#     p = mp.Pool(10, plot_worker, (queue,))
+    multiprocessing.set_start_method('spawn')
 
+    WANDB = True
+    
+    if WANDB:
+        wandb.init(project='tesselate', config={'commit': repo.head.object.hexsha})
+    
     
     # Define the model parameters
-    INPUT_SIZE = 10
-    GRAPH_CONV = 15
+    INPUT_SIZE = 20
+    GRAPH_CONV = 10
     FEED = 'complete'
     
     # Get references to the different devices
@@ -133,27 +111,39 @@ if __name__ == '__main__':
 
     # Genetrate the model
     model = Network(INPUT_SIZE, GRAPH_CONV, cuda0, cuda1)
+    
+    if WANDB:
+        wandb.watch(model)
 
     # Generate the dataset/dataloader for training
     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', FEED)
     dataloader = DataLoader(data, batch_size=1, shuffle=True,
-                            num_workers=500, pin_memory=False,
+                            num_workers=0, pin_memory=False,
                             collate_fn=dict_collate)
 
-    # Initialize the optimizer
-    opt = optim.SGD(model.parameters(), lr = .01, momentum=0.9) #, weight_decay=1e-4)
+    val_data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/validation_ids.txt', 'data/contacts.hdf5', FEED)
+    val_loader = DataLoader(val_data, batch_size=1, shuffle=False,
+                            num_workers=0, pin_memory=False,
+                            collate_fn=dict_collate)
+    
 
+    # Initialize the optimizer
+    opt = optim.SGD(model.parameters(), lr = .005, momentum=0.9) #, weight_decay=1e-4)
+
+    step_iter = 0
+    step_loss = 0
+    step_count = 0
+    
     # Train for N epochs
-    for epoch in trange(10000):
+    for epoch in trange(1000, leave=False):
         
         # Sum the total loss
         total_loss = 0
+        total_count = 0
 
         # For each sample in each example, train the model
-        for sample in tqdm(dataloader):
+        for sample in tqdm(dataloader, leave=False):
             for idx in tqdm(range(len(sample['id'])), leave=False):
-
-                start = time.time()
 
                 # Zero the gradient
                 opt.zero_grad()
@@ -162,88 +152,107 @@ if __name__ == '__main__':
                 atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
                 adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
                 memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
-                target = sample['target'][idx]
+                target = make_sparse_mat(sample['target'][idx], 'tar', int(np.max(sample['memberships'][idx][:, 0]) + 1)).to_dense()
+
                 
-                combos = torch.from_numpy(sample['combos'][idx])
+                try:
+                    # Move the data to the appropriate device
+                    adjacency = adjacency.float().to(cuda0)
+                    memberships = memberships.float().to(cuda0)
+                    target = target.float().to(cuda1)
                 
-                combos = torch.sparse.FloatTensor(combos.t(),
-                                                  torch.ones(len(combos)) * 0.5,
-                                                  torch.Size((len(combos), len(memberships))))
-                
-                #target = make_sparse_mat(sample['target'][idx], 'tar', int(np.max(sample['memberships'][idx][:, 0]) + 1)).to_dense()
-                
-                #target_len, target_map = utri_to_vec(np.max(sample['memberships'][idx][:, 0]) + 1)
-                #target = torch.zeros(target_len, dtype=torch.float32)
+                    # Make the prediction
+                    out = model(adjacency, atomtypes, memberships)
+
+                    # Get the mean reduced loss
+    #                     loss = F.binary_cross_entropy(out, target, reduction='mean')
+
+                    # Get the frequency-adjusted loss
+                    loss = F.binary_cross_entropy(out, target, reduction='none')
+                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+
+                    # Make the backward pass
+                    loss.backward()
+
+                    # Step the optimizer
+                    opt.step()
+
+                    # Get the summed loss
+    #                     loss = F.binary_cross_entropy(out, target, reduction='sum')
+
+
+                    # Get the total loss
+                    total_loss += loss.data
+                    total_count += 1
+
+                    step_loss += loss.data
+                    step_count += 1
+                    step_iter += 1
+
+                    if step_iter % 1000 == 0:
+                        step_loss = step_loss / step_count
+                        wandb.log({'step_loss': step_loss})
+
+                        step_loss = 0
+                        step_count = 0
+                        
+                        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step_iter)))
+                    
+                except RuntimeError:
+                    continue
+                    
+
+        train_loss = total_loss / total_count
+        
+        if WANDB:
+            torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'epoch_{}.pt'.format(epoch)))
             
-                #sel = [target_map[(idx_row[1], idx_row[2], idx_row[0])] for idx_row in sample['target'][idx]]
+        total_count = 0
+        total_loss = 0
+        
+        jobs = []
+        
+        for sample in tqdm(val_loader):
             
-                #target[sel] = 1
+            for idx in tqdm(range(len(sample['id'])), leave=False):
+
+                # Extract the data and convert to appropriate tensor format
+                atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
+                adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
+                memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
+                target = make_sparse_mat(sample['target'][idx], 'tar', int(np.max(sample['memberships'][idx][:, 0]) + 1)).to_dense()
                 
+                try:
+                    # Move the data to the appropriate device
+                    adjacency = adjacency.float().to(cuda0)
+                    memberships = memberships.float().to(cuda0)
+                    target = target.float().to(cuda1)
+
+                    # Make the prediction
+                    out = model(adjacency, atomtypes, memberships)
+
+                    # Get the loss
+                    loss = F.binary_cross_entropy(out, target, reduction='none')
+                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+
+                    # Get the total loss
+                    total_loss += loss.data
+                    total_count += 1
+
+                    # Extract data for plotting
+                    pdb_id = sample['id'][idx]
+                    out = out.data.to(cpu).numpy()
+                    target = target.to(cpu).numpy()
+
+                    p = Process(target=plot_channels, args=(pdb_id, target, out, epoch))
+                    p.start()
+                    jobs.append(p)
+                    
+                except RuntimeError:
+                    continue
                 
-
-                # Move the data to the appropriate device
-                adjacency = adjacency.float().to(cuda0)
-                memberships = memberships.float().to(cuda0)
-                target = target.float().to(cuda1)
-                combos = combos.float().to(cuda0)
-
-                # Make the prediction
-                out = model(adjacency, atomtypes, memberships, combos)
-
-                # Get the mean reduced loss
-                loss = F.binary_cross_entropy(out, target, reduction='mean')
-                
-                # Make the backward pass
-                loss.backward()
-                
-                # Step the optimizer
-                opt.step()
-
-                # Get the summed loss
-                loss = F.binary_cross_entropy(out, target)
-
-                # Get the frequency-adjusted loss
-                #loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * ((target - 1) + 2))  / torch.sum((target - 1) + 2)
-
-                update_end = time.time()
-#                     print('Update: {}'.format(update_end - update_start))
-
-                # Get the total loss
-                total_loss += loss.data
-
-                # Extract data for plotting
-                pdb_id = sample['id'][idx]
-                out = out.data.to(cpu).numpy()
-                target = target.to(cpu).numpy()
-                
-                
-                #del out
-                #del target
-                #del adjacency
-                #del memberships
-                #del combos
-                #del sample
-
-                # Add plots to the mp queue
-#                 if epoch % 50 == 0:
-#                     queue.put((pdb_id, target, out, epoch))
-
-#                     del (adjacency, 
-#                          atomtypes, 
-#                          memberships, 
-#                          target,
-#                          out,
-#                          loss)
-
-#                     torch.cuda.empty_cache()
-
-
-#         if epoch % 10 == 0:
-#         print('Epoch: {}, Loss: {:02f}'.format(epoch, float(total_loss) / 10))
-    
-    # Finish the plotting queue
-#     queue.put('plot_complete')
-#     queue.close()
-#     queue.join_thread()
-#     p.join()
-                
+        val_loss = total_loss / total_count
+        
+        if WANDB:
+            wandb.log({'train_loss': train_loss, 'val_loss': val_loss})
+        
