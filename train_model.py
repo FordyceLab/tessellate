@@ -210,6 +210,8 @@ if __name__ == '__main__':
         total_count = 0
         total_loss = 0
         
+        jobs = []
+        
         for sample in tqdm(val_loader):
             
             for idx in tqdm(range(len(sample['id'])), leave=False):
@@ -244,7 +246,8 @@ if __name__ == '__main__':
 
                     p = Process(target=plot_channels, args=(pdb_id, target, out, epoch))
                     p.start()
-                
+                    jobs.append(p)
+                    
                 except RuntimeError:
                     continue
                 
