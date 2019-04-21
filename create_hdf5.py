@@ -111,32 +111,27 @@ def process_arpeggio_out(dirname, pdb_id):
                 if val == 1:
                     contacts.add((atom_partner_1, atom_partner_2, channel))
                     contacts.add((atom_partner_2, atom_partner_1, channel))
-                    
-                    if channel == cont_chan['covalent']:
-                        covalent.add((atom_partner_1, atom_partner_2))
-                        covalent.add((atom_partner_2, atom_partner_1))
                         
-                    if channel >= cont_chan['vdw']:
-                        target.add((res_partner_1, res_partner_2, channel))
-                        target.add((res_partner_1, res_partner_2, channel))
+                    target.add((res_partner_1, res_partner_2, channel))
+                    target.add((res_partner_2, res_partner_1, channel))
                         
     return (np.array(atom_ids), np.array(membership), np.array(list(contacts)),
-            np.array(list(target)), np.array(list(covalent)))
+            np.array(list(target)))
 
 
-def create_adj(covalent):
-    # Make the normalized adjacency matrix
-    C_hat = covalent + torch.eye(covalent.shape[0])
-    diag = 1 / torch.sqrt(C_hat.sum(dim=1))
-    D_hat = torch.zeros_like(C_hat)
-    n = D_hat.shape[0]
-    D_hat[range(n), range(n)] = diag
+# def create_adj(covalent):
+#     # Make the normalized adjacency matrix
+#     C_hat = covalent + torch.eye(covalent.shape[0])
+#     diag = 1 / torch.sqrt(C_hat.sum(dim=1))
+#     D_hat = torch.zeros_like(C_hat)
+#     n = D_hat.shape[0]
+#     D_hat[range(n), range(n)] = diag
     
-    D_hat_sparse = D_hat.to_sparse()
+#     D_hat_sparse = D_hat.to_sparse()
 
-    adjacency = D_hat_sparse.mm(C_hat).to_sparse().mm(D_hat).to_sparse()
+#     adjacency = D_hat_sparse.mm(C_hat).to_sparse().mm(D_hat).to_sparse()
     
-    return adjacency
+#     return adjacency
 
 
 def extract_sparse(sparse_mat):
@@ -146,41 +141,27 @@ def extract_sparse(sparse_mat):
 
 
 def process(entry):        
-    atomtypes, memberships, contacts, target, covalent = process_arpeggio_out('data/processed', entry)
-    
-    if len(covalent.shape) == 2:
+    atomtypes, memberships, contacts, target = process_arpeggio_out('data/processed', entry)
 
-        atomtypes = atomtypes.astype(np.uint32)
-        memberships = memberships.astype(np.uint32)
-        contacts = contacts.astype(np.uint32)
-        target = target.astype(np.uint32)
+    atomtypes = atomtypes.astype(np.uint32)
+    memberships = memberships.astype(np.uint32)
+    contacts = contacts.astype(np.uint32)
+    target = target.astype(np.uint32)
 
-        # Get the 'memberships' and 'covalent' sparse matrices
-        covalent = make_sparse_mat(covalent, 'cov', count=len(atomtypes)).to_dense()
-
-        # Extract the covalent bonds between all atoms in the structure
-        adjacency = create_adj(covalent)
-
-
-        adjacency = extract_sparse(adjacency).astype(np.float32)
-
-        return {
-            'entry': entry,
-            'atomtypes': atomtypes,
-            'memberships': memberships,
-            'contacts': contacts,
-            'target': target,
-            'adjacency': adjacency
-        }
+    return {
+        'entry': entry,
+        'atomtypes': atomtypes,
+        'memberships': memberships,
+        'contacts': contacts,
+        'target': target,
+    }
 
 def hdf5_write(result, h5file):
-#     tqdm.write('Adding {}...'.format(result['entry']))
     entry_group = h5file.create_group(result['entry'])
     entry_group.create_dataset('atomtypes', data=result['atomtypes'], compression='gzip', compression_opts=9)
     entry_group.create_dataset('memberships', data=result['memberships'], compression='gzip', compression_opts=9)
     entry_group.create_dataset('contacts', data=result['contacts'], compression='gzip', compression_opts=9)
     entry_group.create_dataset('target', data=result['target'], compression='gzip', compression_opts=9)
-    entry_group.create_dataset('adjacency', data=result['adjacency'], compression='gzip', compression_opts=9)
 
 
 if __name__ == '__main__':
