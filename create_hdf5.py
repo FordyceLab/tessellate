@@ -192,7 +192,7 @@ if __name__ == '__main__':
     futures = []
     
     # Loop through the accession numbers
-    for entry in tqdm(accessions, leave=False):
+    for entry in tqdm(accessions, leave=False, dynamic_ncols=True):
         if entry not in h5file:
             futures.append(pool.submit(process, (entry)))
         
@@ -200,7 +200,7 @@ if __name__ == '__main__':
     
     while len(futures) > 0:
         tqdm.write('{} of {} structures remaining.'.format(len(futures), initial_len))
-        for idx, future in tqdm(enumerate(futures), total=len(futures), leave=False):
+        for idx, future in tqdm(enumerate(futures), total=len(futures), leave=False, dynamic_ncols=True):
             if future.done():
                 if future.result() is not None:
                     hdf5_write(future.result(), h5file)
