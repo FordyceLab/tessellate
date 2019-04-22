@@ -3,11 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-
-import time
 
 
 class GGNUnit(nn.Module):
@@ -54,7 +49,8 @@ class Network(nn.Module):
                                       input_size,
                                       scale_grad_by_freq=False)
         
-        self.n_conv = n_conv
+        self.n_atom_conv = n_atom_conv
+        self.n_atom_conv = n_atom_conv
         
         self.ggn = GGNUnit(input_size).to(device0)
         
@@ -69,13 +65,14 @@ class Network(nn.Module):
         hidden_states = []
         
         for i in range(self.n_conv):
-            x_in = self.ggn(adjacency, x_in)
+            x_in = self.ggn_atom(atom_adjacency, x_in)
             
-        h_final = torch.mm(membership, x_in)
+        x_in = torch.mm(membership, x_in).to(self.device1)
         
-        mean_combos = torch.mm(combos, h_final)
+        for i in range(self.n_conv):
+            x_in = self.ggn_res(res_adjacency, x_in)
         
-        mean_combos = mean_combos.to(self.device1)
+        mean_combos = torch.mm(combos, x_in)
         
         out = self.ffn(mean_combos)
         
