@@ -8,6 +8,21 @@ from dask.distributed import Client, LocalCluster
 import random
 
 
+def create_adj(covalent):
+    # Make the normalized adjacency matrix
+    C_hat = covalent + torch.eye(covalent.shape[0])
+    diag = 1 / torch.sqrt(C_hat.sum(dim=1))
+    D_hat = torch.zeros_like(C_hat)
+    n = D_hat.shape[0]
+    D_hat[range(n), range(n)] = diag
+    
+    D_hat_sparse = D_hat.to_sparse()
+
+    adjacency = D_hat_sparse.mm(C_hat).to_sparse().mm(D_hat).to_sparse()
+    
+    return adjacency
+
+
 def torch_idx(idx_mat):
     """
     Extract the coordinates from a sparse matrix format and return as a torch.LongTensor.
