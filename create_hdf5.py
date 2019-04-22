@@ -6,7 +6,7 @@ import torch
 from tqdm import *
 import glob
 from tesselate.data import make_sparse_mat
-from concurrent.futures import ThreadPoolExecutor
+import multiprocessing as mp
     
 cont_chan = (
     'clash',
@@ -119,21 +119,6 @@ def process_arpeggio_out(dirname, pdb_id):
             np.array(list(target)))
 
 
-# def create_adj(covalent):
-#     # Make the normalized adjacency matrix
-#     C_hat = covalent + torch.eye(covalent.shape[0])
-#     diag = 1 / torch.sqrt(C_hat.sum(dim=1))
-#     D_hat = torch.zeros_like(C_hat)
-#     n = D_hat.shape[0]
-#     D_hat[range(n), range(n)] = diag
-    
-#     D_hat_sparse = D_hat.to_sparse()
-
-#     adjacency = D_hat_sparse.mm(C_hat).to_sparse().mm(D_hat).to_sparse()
-    
-#     return adjacency
-
-
 def extract_sparse(sparse_mat):
     indices = sparse_mat._indices().t().numpy()
     values = sparse_mat._values().numpy()
@@ -156,6 +141,7 @@ def process(entry):
         'target': target,
     }
 
+
 def hdf5_write(result, h5file):
     entry_group = h5file.create_group(result['entry'])
     entry_group.create_dataset('atomtypes', data=result['atomtypes'], compression='gzip', compression_opts=9)
@@ -167,7 +153,7 @@ def hdf5_write(result, h5file):
 if __name__ == '__main__':
     
     # Init the pool
-    pool = ThreadPoolExecutor(80)
+    pool = mp.Pool(300, maxtasksperchild=5)
     
     # Open up the HDF5 file
     h5file = h5py.File('data/contacts.hdf5', 'a')
@@ -188,22 +174,21 @@ if __name__ == '__main__':
             
     else:
         raise(ValueError('Invalid target: `{}` file or directory not found.'.format(proc_target)))
-    
-    futures = []
+        
+    reduced_entries = []
     
     # Loop through the accession numbers
     for entry in tqdm(accessions, leave=False, dynamic_ncols=True):
         if entry not in h5file:
-            futures.append(pool.submit(process, (entry)))
+            reduced_entries.append(entry)
         
-    initial_len = len(futures)
+    results = pool.imap_unordered(process, (entry for entry in reduced_entries))
     
-    while len(futures) > 0:
-        tqdm.write('{} of {} structures remaining.'.format(len(futures), initial_len))
-        for idx, future in tqdm(enumerate(futures), total=len(futures), leave=False, dynamic_ncols=True):
-            if future.done():
-                if future.result() is not None:
-                    hdf5_write(future.result(), h5file)
-                del futures[idx]
+    for result in tqdm(results, leave=False, dynamic_ncols=True, total=len(reduced_entries)):
+        hdf5_write(result, h5file)
     
     h5file.close()
+
+    pool.close()
+    pool.join()
+    
