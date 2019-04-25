@@ -110,17 +110,17 @@ if __name__ == '__main__':
     
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
-    repo = Repo('.')
-    if repo.is_dirty():
-        print("Git repo is dirty, please commit changes before training model.")
-        sys.exit(1)
+#     repo = Repo('.')
+#     if repo.is_dirty():
+#         print("Git repo is dirty, please commit changes before training model.")
+#         sys.exit(1)
     
     # Initialize the multiprocessing capabilities for plotting
 #     multiprocessing.set_start_method('spawn')
 #     queue = mp.Queue()
 #     p = mp.Pool(10, plot_worker, (queue,))
 
-    WANDB = True
+    WANDB = False
     
     if WANDB:
         wandb.init(project='tesselate', config={'commit': repo.head.object.hexsha})
@@ -128,7 +128,7 @@ if __name__ == '__main__':
     
     # Define the model parameters
     INPUT_SIZE = 20
-    GRAPH_CONV = 10
+    GRAPH_CONV = 3
     FEED = 'complete'
     
     # Get references to the different devices
@@ -137,7 +137,7 @@ if __name__ == '__main__':
     cpu = torch.device('cpu')
 
     # Genetrate the model
-    model = Network(INPUT_SIZE, GRAPH_CONV, cuda0, cuda1)
+    model = Network(INPUT_SIZE, GRAPH_CONV, GRAPH_CONV, cuda0, cuda1)
     
     if WANDB:
         wandb.watch(model)
@@ -145,12 +145,12 @@ if __name__ == '__main__':
     # Generate the dataset/dataloader for training
     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', FEED)
     dataloader = DataLoader(data, batch_size=1, shuffle=True,
-                            num_workers=0, pin_memory=False,
+                            num_workers=200, pin_memory=False,
                             collate_fn=dict_collate)
 
     val_data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/validation_ids.txt', 'data/contacts.hdf5', FEED)
     val_loader = DataLoader(val_data, batch_size=1, shuffle=True,
-                            num_workers=0, pin_memory=False,
+                            num_workers=100, pin_memory=False,
                             collate_fn=dict_collate)
     
 
@@ -162,6 +162,8 @@ if __name__ == '__main__':
     step_count = 0
     
     # Train for N epochs
+    
+    OOM_COUNT=0
     for epoch in trange(1000, leave=False):
         
         # Sum the total loss
@@ -177,7 +179,8 @@ if __name__ == '__main__':
                 
                 # Extract the data and convert to appropriate tensor format
                 atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
-                adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
+                atom_adjacency = make_sparse_mat(sample['atom_adjacency'][idx], 'adj')
+                res_adjacency = make_sparse_mat(sample['res_adjacency'][idx], 'adj')
                 memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
                 target = torch.from_numpy(sample['target'][idx])
                 
@@ -188,14 +191,15 @@ if __name__ == '__main__':
                                                   torch.Size((len(combos), len(memberships))))                
 
                 # Move the data to the appropriate device
-                adjacency = adjacency.float().to(cuda0)
+                atom_adjacency = atom_adjacency.float().to(cuda0)
                 memberships = memberships.float().to(cuda0)
-                target = target.float().to(cuda1)
+                res_adjacency = res_adjacency.float().to(cuda0)
+                target = target.float().to(cuda0)
                 combos = combos.float().to(cuda0)
 
                 try:
                     # Make the prediction
-                    out = model(adjacency, atomtypes, memberships, combos)
+                    out = model(atom_adjacency, res_adjacency, atomtypes, memberships, combos)
 
                     # Get the mean reduced loss
     #                     loss = F.binary_cross_entropy(out, target, reduction='mean')
@@ -222,7 +226,7 @@ if __name__ == '__main__':
                     step_count += 1
                     step_iter += 1
 
-                    if step_iter % 1000 == 0:
+                    if step_iter % 1000 == 0 and WANDB:
                         step_loss = step_loss / step_count
                         wandb.log({'step_loss': step_loss})
 
@@ -232,6 +236,8 @@ if __name__ == '__main__':
                         torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step_iter)))
                     
                 except RuntimeError:
+                    OOM_COUNT += 1
+                    print('OOM: {}'.format(OOM_COUNT))
                     continue
                     
 
