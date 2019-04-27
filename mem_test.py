@@ -8,17 +8,18 @@ import torch.multiprocessing as multiprocessing
 def dict_collate(batch):
     return batch[0]
 
-
 if __name__ == '__main__':
     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', 'complete')
-    dataloader = DataLoader(data, batch_size=1, shuffle=True,
-                            num_workers=500, pin_memory=True,
+    dataloader = DataLoader(data, batch_size=1, shuffle=False,
+                            num_workers=0, pin_memory=False,
                             collate_fn=dict_collate)
     
     dl = iter(dataloader)
     
-    for sample in dl:
-        del sample
-        tqdm.write('Queue size: {}'.format(dl.data_queue.qsize()))
-        continue
+    i = 0
+    
+    for sample in tqdm(dl):
+        i+=1
+        if i >= 40:
+            break
     
