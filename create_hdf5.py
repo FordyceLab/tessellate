@@ -7,6 +7,7 @@ from tqdm import *
 import glob
 from tesselate.data import make_sparse_mat
 import multiprocessing as mp
+import time
     
 cont_chan = (
     'clash',
@@ -132,28 +133,40 @@ def process(entry):
     memberships = memberships.astype(np.uint32)
     contacts = contacts.astype(np.uint32)
     target = target.astype(np.uint32)
-
-    return {
+    
+    result = {
         'entry': entry,
         'atomtypes': atomtypes,
         'memberships': memberships,
         'contacts': contacts,
         'target': target,
     }
+    
+    hdf5_write(result)
 
 
-def hdf5_write(result, h5file):
-    entry_group = h5file.create_group(result['entry'])
-    entry_group.create_dataset('atomtypes', data=result['atomtypes'], compression='gzip', compression_opts=9)
-    entry_group.create_dataset('memberships', data=result['memberships'], compression='gzip', compression_opts=9)
-    entry_group.create_dataset('contacts', data=result['contacts'], compression='gzip', compression_opts=9)
-    entry_group.create_dataset('target', data=result['target'], compression='gzip', compression_opts=9)
+def hdf5_write(result):
+    written = False
+    
+    while not written:
+        try:
+            with h5py.File('data/contacts.hdf5', 'a') as h5file:
+                entry_group = h5file.create_group(result['entry'])
+                entry_group.create_dataset('atomtypes', data=result['atomtypes'], compression='gzip', compression_opts=9)
+                entry_group.create_dataset('memberships', data=result['memberships'], compression='gzip', compression_opts=9)
+                entry_group.create_dataset('contacts', data=result['contacts'], compression='gzip', compression_opts=9)
+                entry_group.create_dataset('target', data=result['target'], compression='gzip', compression_opts=9)
 
+            written = True
+
+        except OSError:
+            time.sleep(0.5)
+            
 
 if __name__ == '__main__':
     
     # Init the pool
-    pool = mp.Pool(300, maxtasksperchild=5)
+    pool = mp.Pool(300)
     
     # Open up the HDF5 file
     h5file = h5py.File('data/contacts.hdf5', 'a')
@@ -181,14 +194,15 @@ if __name__ == '__main__':
     for entry in tqdm(accessions, leave=False, dynamic_ncols=True):
         if entry not in h5file:
             reduced_entries.append(entry)
-        
-    results = pool.imap_unordered(process, (entry for entry in reduced_entries))
-    
-    for result in tqdm(results, leave=False, dynamic_ncols=True, total=len(reduced_entries)):
-        hdf5_write(result, h5file)
-    
+            
     h5file.close()
-
+        
+    results = pool.imap_unordered(process, reduced_entries)
     pool.close()
+    
+    for result in tqdm(results, dynamic_ncols=True, total=len(reduced_entries)):
+        pass
+        
+    pool.terminate()
     pool.join()
     
