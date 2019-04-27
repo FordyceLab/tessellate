@@ -125,9 +125,8 @@ if __name__ == '__main__':
     
     
     # Define the model parameters
-    INPUT_SIZE = 15
-    GRAPH_CONV = 3
-    FEED = 'complete'
+    INPUT_SIZE = 10
+    GRAPH_CONV = 5
     
     # Get references to the different devices
     cuda0 = torch.device('cuda:0')
@@ -155,7 +154,7 @@ if __name__ == '__main__':
     
 
     # Initialize the optimizer
-    opt = optim.SGD(model.parameters(), lr = .005, momentum=0.9) #, weight_decay=1e-4)
+    opt = optim.SGD(model.parameters(), lr = .001, momentum=0.9) #, weight_decay=1e-4)
 
     step_iter = 0
     step_loss = 0
@@ -251,9 +250,10 @@ if __name__ == '__main__':
 
             try:
                 # Make the prediction
-                out = model(adjacency, atomtypes, memberships, combos)
+                out = model(atom_adjacency, res_adjacency, atomtypes, memberships, combos)
 
-                # Get the summed loss
+                # Get the frequency-adjusted loss
+                loss = F.binary_cross_entropy(out, target, reduction='none')
                 loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
 
                 # Get the total loss
