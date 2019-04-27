@@ -4,24 +4,50 @@ import h5py
 import torch
 from torch.utils.data import Dataset
 from itertools import combinations
-from dask.distributed import Client, LocalCluster
 import random
 
+def get_res_cov(target):
+    # Get only the covalent channel and the 2D coordinate columns
+    return target[np.where(target[:, 0] == 1)[0], 1:]
 
-def create_adj(covalent):
-    # Make the normalized adjacency matrix
-    C_hat = covalent + torch.eye(covalent.shape[0])
-    diag = 1 / torch.sqrt(C_hat.sum(dim=1))
-    D_hat = torch.zeros_like(C_hat)
-    n = D_hat.shape[0]
-    D_hat[range(n), range(n)] = diag
+
+def get_target_channels(target):
+    # Drop the first three channels and get only the upper triangle
+    target = target[np.where((target[:, 0] > 2) * (target[:, 1] <= target[:, 2]))[0], :]
+    target[:, 0] = target[:, 0] - 3
+    return target
+
+
+def create_adj(covalent, size):
+    covalent = make_sparse_mat(covalent, 'cov', size).to_dense()
     
-    D_hat_sparse = D_hat.to_sparse()
+    # Make the normalized adjacency matrix
+    C_hat = (covalent + torch.eye(covalent.shape[0]) > 0).type(torch.FloatTensor)
+    diag = 1 / torch.sqrt(C_hat.sum(dim=1))
+    
+    size = len(C_hat)
+    
+    coord = np.array(list(range(size)), dtype=np.int64)
+    diag_coords = torch.from_numpy(np.vstack((coord, coord)))
+    
+    D_hat_sparse = torch.sparse.FloatTensor(diag_coords, diag, torch.Size([size, size]))
+    D_hat = D_hat_sparse.to_dense()
 
     adjacency = D_hat_sparse.mm(C_hat).to_sparse().mm(D_hat).to_sparse()
     
     return adjacency
 
+def get_atom_res_adj(contacts, target, memberships):
+    atom_size = np.max(memberships[:, 1])
+    res_size = np.max(memberships[:, 0])
+    
+    covalent = contacts[np.where(contacts[:, 2] == 1)[0], :2]
+    
+    atom_adjacency = extract_sparse(create_adj(covalent, atom_size + 1))
+    res_adjacency = extract_sparse(create_adj(get_res_cov(target), res_size + 1))
+    
+    return (np.column_stack(atom_adjacency), np.column_stack(res_adjacency))
+    
 
 def torch_idx(idx_mat):
     """
@@ -114,14 +140,13 @@ def make_sparse_mat(idx_mat, mat_type, count=None):
     return(out_mat)
 
 
-def select_chains(atomtypes, memberships, adjacency, target, chains):
+def select_chains(atomtypes, memberships, contacts, target, chains):
     """
     Select a subset of chains from the dataset encoding the entire structure.
     
     Args:
     - atomtypes (numpy ndarray) - ndarray representing the atomtypes
     - memberships (numpy ndarray) - ndarray representing the memberships
-    - adjacency (numpy ndarray) - ndarray representing the adjacency matrix
     - target (numpy ndarray) - Dense ndarray representing the target
     - chains (list) - List of chains in selection
     
@@ -143,10 +168,10 @@ def select_chains(atomtypes, memberships, adjacency, target, chains):
     sel_atoms = np.unique(sel_atomtypes[:, ATOM_IDX])
     
     # Select the pertinent information from the coordinate matrices
-    #### NOTE: adjacency matrix may not be correct, may have to recompute for the smaller number of atoms when performing chain selection
-    sel_adjacency = adjacency[np.isin(adjacency[:, 0], sel_atoms) & np.isin(adjacency[:, 1], sel_atoms), :]
     sel_memberships = memberships[np.isin(memberships[:, 0], sel_residues) &
                                   np.isin(memberships[:, 1], sel_atoms), :]
+    sel_contacts = contacts[np.isin(contacts[:, 0], sel_residues) &
+                            np.isin(contacts[:, 1], sel_atoms), :]
     sel_target = target[np.isin(target[:, 1], sel_residues) & np.isin(target[:, 2], sel_residues), :]
     
     # Handle renumbering of atoms and residues
@@ -159,8 +184,8 @@ def select_chains(atomtypes, memberships, adjacency, target, chains):
     sel_atomtypes[:, RESIDUE_IDX] = [res_remap[i] for i in sel_atomtypes[:, RESIDUE_IDX]]
     sel_atomtypes[:, ATOM_IDX] = [atom_remap[i] for i in sel_atomtypes[:, ATOM_IDX]]
     
-    sel_adjacency[:, 0] = [atom_remap[i] for i in sel_adjacency[:, 0]]
-    sel_adjacency[:, 1] = [atom_remap[i] for i in sel_adjacency[:, 1]]
+    sel_contacts[:, 0] = [atom_remap[i] for i in sel_contacts[:, 0]]
+    sel_contacts[:, 1] = [atom_remap[i] for i in sel_contacts[:, 1]]
     
     sel_memberships[:, 0] = [res_remap[i] for i in sel_memberships[:, 0]]
     sel_memberships[:, 1] = [atom_remap[i] for i in sel_memberships[:, 1]]
@@ -169,7 +194,7 @@ def select_chains(atomtypes, memberships, adjacency, target, chains):
     sel_target[:, 2] = [res_remap[i] for i in sel_target[:, 2]]
     
     # Return a tuple of the selections in coordinate form
-    return (sel_atomtypes, sel_memberships, sel_adjacency, sel_target)
+    return (sel_atomtypes, sel_memberships, sel_contacts, sel_target)
 
 
 def utri_2d_to_1d(n_res):
@@ -197,7 +222,7 @@ def utri_2d_to_1d(n_res):
         idx_map[(i, j)] = idx
         
         # Increment the id
-        idx +=1
+        idx += 1
         
     # Return the length of the vector and the map
     return (len(idx_map), idx_map)
@@ -233,19 +258,15 @@ def read_data(dataset, entry):
     # Read the data from the HDF5 file
     atomtypes = dataset[entry]['atomtypes'][:].astype(np.int64)
     memberships = dataset[entry]['memberships'][:]
-    adjacency = dataset[entry]['adjacency'][:]
 
     # Handle the target slightly differently
     # Rearrange columns
     target = dataset[entry]['target'][:][:, [2, 0, 1]]
-
-    # Subtract 3 (because first 3 channels are dropped in the target)
-    target[:, 0] = target[:, 0] - 3
     
     return (atomtypes, memberships, adjacency, target)
 
 
-def process(entry, atomtypes, memberships, adjacency, target, feed_method):
+def process(entry, atomtypes, contacts, memberships, target, feed_method):
     
     # Extract the unique chains in the structure
     unique_chains = np.unique(atomtypes[:, 0])
@@ -256,7 +277,8 @@ def process(entry, atomtypes, memberships, adjacency, target, feed_method):
     entry_list = []
     atomtype_list = []
     membership_list = []
-    adjacency_list = []
+    atom_adjacency_list = []
+    res_adjacency_list = []
     target_list = []
 
     # Handle feeding of complete structure
@@ -264,8 +286,12 @@ def process(entry, atomtypes, memberships, adjacency, target, feed_method):
         entry_list.append(entry)
         atomtype_list.append(atomtypes)
         membership_list.append(memberships)
-        adjacency_list.append(adjacency)
-        target_list.append(target)
+        target_list.append(get_target_channels(target))
+        
+        atom_adjacency, res_adjacency = get_atom_res_adj(contacts, target, memberships)
+        
+        atom_adjacency_list.append(atom_adjacency)
+        res_adjacency_list.append(res_adjacency)
 
     # Handle single chain and pairwise feedings
     else:
@@ -289,13 +315,17 @@ def process(entry, atomtypes, memberships, adjacency, target, feed_method):
 
         # Loop through each subset selection and add the matrices to the appropriate list
         for chains in chain_combos:
-            selection = select_chains(atomtypes, memberships, adjacency, target, chains)
+            selection = select_chains(atomtypes, memberships, contacts, target, chains)
 
             entry_list.append('{}_'.format(entry, '_'.join([str(i) for i in chains])))
             atomtype_list.append(selection[0])
             membership_list.append(selection[1])
-            adjacency_list.append(selection[2])
-            target_list.append(selection[3])
+            target_list.append(get_target_channels(selection[3]))
+            
+            atom_adjacency, res_adjacency = get_atom_res_adj(selection[2], selection[3], selection[1])
+        
+            atom_adjacency_list.append(atom_adjacency)
+            res_adjacency_list.append(res_adjacency)
 
     target_list = [make_mat_target(target_list[idx], membership_list[idx]) for idx in range(len(target_list))]
 
@@ -307,7 +337,8 @@ def process(entry, atomtypes, memberships, adjacency, target, feed_method):
         'id': entry_list,
         'atomtypes': atomtype_list,
         'memberships': membership_list,
-        'adjacency': adjacency_list,
+        'atom_adjacency': atom_adjacency_list,
+        'res_adjacency': res_adjacency_list,
         'target': target_list,
         'combos': combos_list
     }
@@ -337,7 +368,9 @@ class TesselateDataset(Dataset):
         # Store reference to HDF5 data file
         self.hdf5_dataset = hdf5_dataset
         
-        self.dataset = h5py.File(self.hdf5_dataset)
+        self.dataset = None
+        
+#         self.client = plasma_client
         
         # Store desired feed method
         self.feed_method = feed_method
@@ -363,25 +396,29 @@ class TesselateDataset(Dataset):
         - idx (int) - Index of desired sample.
         
         Returns:
-        - Dictionary of PDB ID and atomtype, memberships, adjacency, and
-            target tensors. All tensors are sparse when possible.
+        - Dictionary of PDB ID and atomtype, memberships, atom adjacency,
+            residue adjacency, and target tensors. All tensors are sparse when possible.
         """
         # Get the entry PDB ID
         entry = self.accessions[idx]
 
+        if self.dataset is None:
+            self.dataset = h5py.File(self.hdf5_dataset, 'r')
+        
         # Read the data from the HDF5 file
         atomtypes = self.dataset[entry]['atomtypes'][:].astype(np.int64)
         memberships = self.dataset[entry]['memberships'][:]
-        adjacency = self.dataset[entry]['adjacency'][:]
+        contacts = self.dataset[entry]['contacts'][:]
 
         # Handle the target slightly differently
         # Rearrange columns
         target = self.dataset[entry]['target'][:][:, [2, 0, 1]]
-
-        # Subtract 3 (because first 3 channels are dropped in the target)
-        target[:, 0] = target[:, 0] - 3
         
-        data_dict = process(entry, atomtypes, memberships, adjacency, target, self.feed_method)
+        data_dict = process(entry, atomtypes, contacts, memberships, target, self.feed_method)
+        
+#         data_dict_id = self.client.put(data_dict)
+        
+#         del (data_dict, atomtypes, memberships, contacts, target)
         
         return data_dict
         
