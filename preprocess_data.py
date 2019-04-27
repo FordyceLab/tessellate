@@ -55,11 +55,13 @@ def prep(entry):
 if __name__ == '__main__':
     
     # Init the pool
-    pool = mp.Pool(38)
+    pool = mp.Pool(1)
     
+    with h5py.File('data/training.hdf5', 'r') as dataset:
+        training_keys = list(dataset.keys())
     
     with h5py.File('data/contacts.hdf5', 'r') as dataset:
-        keys = list(dataset.keys())
+        keys = [key for key in dataset.keys() if key not in training_keys]
     
     results = pool.imap(prep, keys)
     
