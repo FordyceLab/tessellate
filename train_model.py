@@ -171,7 +171,7 @@ if __name__ == '__main__':
         total_count = 0
 
         # For each sample in each example, train the model
-        for sample in tqdm(dataloader, leave=False):
+        for sample in tqdm(dataloader, leave=False, dynamic_ncols=True):
 
                 # Zero the gradient
                 opt.zero_grad()
@@ -233,7 +233,7 @@ if __name__ == '__main__':
         total_count = 0
         total_loss = 0
         
-        for sample in tqdm(val_loader):
+        for sample in tqdm(val_loader, leave=False, dynamic_ncols=True):
 
             atomtypes = sample['atomtypes']
             atom_adjacency = sample['atom_adjacency']
