@@ -108,10 +108,10 @@ if __name__ == '__main__':
     
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
-#     repo = Repo('.')
-#     if repo.is_dirty():
-#         print("Git repo is dirty, please commit changes before training model.")
-#         sys.exit(1)
+    repo = Repo('.')
+    if repo.is_dirty():
+        print("Git repo is dirty, please commit changes before training model.")
+        sys.exit(1)
     
     # Initialize the multiprocessing capabilities for plotting
 #     multiprocessing.set_start_method('spawn')
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     
     
     # Define the model parameters
-    INPUT_SIZE = 20
+    INPUT_SIZE = 15
     GRAPH_CONV = 3
     FEED = 'complete'
     
@@ -144,13 +144,13 @@ if __name__ == '__main__':
     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt',
                             'data/training.hdf5')
     dataloader = DataLoader(data, batch_size=1, shuffle=True,
-                            num_workers=0, pin_memory=True,
+                            num_workers=0, pin_memory=False,
                             collate_fn=dict_collate)
 
     val_data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/validation_ids.txt',
                                 'data/training.hdf5')
     val_loader = DataLoader(val_data, batch_size=1, shuffle=True,
-                            num_workers=0, pin_memory=True,
+                            num_workers=0, pin_memory=False,
                             collate_fn=dict_collate)
     
 
@@ -218,7 +218,7 @@ if __name__ == '__main__':
 
                         step_loss = 0
                         step_count = 0
-                        
+
                         torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step_iter)))
                     
                 except RuntimeError:
