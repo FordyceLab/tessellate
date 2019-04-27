@@ -118,7 +118,7 @@ if __name__ == '__main__':
 #     queue = mp.Queue()
 #     p = mp.Pool(10, plot_worker, (queue,))
 
-    WANDB = False
+    WANDB = True
     
     if WANDB:
         wandb.init(project='tesselate', config={'commit': repo.head.object.hexsha})
