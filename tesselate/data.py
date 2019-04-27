@@ -360,7 +360,7 @@ class TesselateDataset(Dataset):
         (default = 'complete').
     """
     
-    def __init__(self, accession_list, hdf5_dataset, feed_method='complete'):
+    def __init__(self, accession_list, hdf5_dataset):
         
         # Store reference to accession list file
         self.accession_list = accession_list
@@ -368,12 +368,8 @@ class TesselateDataset(Dataset):
         # Store reference to HDF5 data file
         self.hdf5_dataset = hdf5_dataset
         
-        self.dataset = None
-        
-#         self.client = plasma_client
-        
-        # Store desired feed method
-        self.feed_method = feed_method
+        # Open the dataset
+        self.dataset = h5py.File(self.hdf5_dataset, 'r')
         
         # Read in and store a list of accession IDs
         with open(accession_list, 'r') as handle:
@@ -401,24 +397,31 @@ class TesselateDataset(Dataset):
         """
         # Get the entry PDB ID
         entry = self.accessions[idx]
-
-        if self.dataset is None:
-            self.dataset = h5py.File(self.hdf5_dataset, 'r')
         
         # Read the data from the HDF5 file
         atomtypes = self.dataset[entry]['atomtypes'][:].astype(np.int64)
         memberships = self.dataset[entry]['memberships'][:]
-        contacts = self.dataset[entry]['contacts'][:]
+        atom_adjacency = self.dataset[entry]['atom_adjacency'][:]
+        res_adjacency = self.dataset[entry]['res_adjacency'][:]
+        combos = self.dataset[entry]['combos'][:]
 
         # Handle the target slightly differently
         # Rearrange columns
         target = self.dataset[entry]['target'][:][:, [2, 0, 1]]
         
-        data_dict = process(entry, atomtypes, contacts, memberships, target, self.feed_method)
+        data_dict = {}
         
-#         data_dict_id = self.client.put(data_dict)
-        
-#         del (data_dict, atomtypes, memberships, contacts, target)
+        # Extract the data and convert to appropriate tensor format
+        data_dict['atomtypes'] = torch.from_numpy(atomtypes[:, 3])
+        data_dict['atom_adjacency'] = make_sparse_mat(atom_adjacency, 'adj')
+        data_dict['res_adjacency'] = make_sparse_mat(res_adjacency, 'adj')
+        data_dict['memberships'] = make_sparse_mat(memberships, 'mem')
+
+        data_dict['combos'] = torch.sparse.FloatTensor(combos.t(),
+                                                       torch.ones(len(combos)) * 0.5,
+                                                       torch.Size((len(combos), len(memberships)))) 
+
+        data_dict['target'] = torch.from_numpy(sample['target'])
         
         return data_dict
         

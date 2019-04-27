@@ -15,9 +15,6 @@ from tqdm import *
 import time
 import wandb
 
-#multiprocessing.set_sharing_strategy('file_system')
-# multiprocessing.set_sharing_strategy('file_descriptor')
-
 
 def plot_channels(pdb_id, target, out, epoch):
     """
@@ -105,6 +102,7 @@ def plot_worker(queue):
     
 def dict_collate(batch):
     return batch[0]
+    
 
 if __name__ == '__main__':
     
@@ -143,14 +141,16 @@ if __name__ == '__main__':
         wandb.watch(model)
 
     # Generate the dataset/dataloader for training
-    data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt', 'data/contacts.hdf5', FEED)
+    data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt',
+                            'data/training.hdf5')
     dataloader = DataLoader(data, batch_size=1, shuffle=True,
-                            num_workers=200, pin_memory=False,
+                            num_workers=0, pin_memory=True,
                             collate_fn=dict_collate)
 
-    val_data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/validation_ids.txt', 'data/contacts.hdf5', FEED)
+    val_data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/validation_ids.txt',
+                                'data/training.hdf5')
     val_loader = DataLoader(val_data, batch_size=1, shuffle=True,
-                            num_workers=100, pin_memory=False,
+                            num_workers=0, pin_memory=True,
                             collate_fn=dict_collate)
     
 
@@ -172,23 +172,16 @@ if __name__ == '__main__':
 
         # For each sample in each example, train the model
         for sample in tqdm(dataloader, leave=False):
-            for idx in tqdm(range(len(sample['id'])), leave=False):
 
                 # Zero the gradient
                 opt.zero_grad()
                 
-                # Extract the data and convert to appropriate tensor format
-                atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
-                atom_adjacency = make_sparse_mat(sample['atom_adjacency'][idx], 'adj')
-                res_adjacency = make_sparse_mat(sample['res_adjacency'][idx], 'adj')
-                memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
-                target = torch.from_numpy(sample['target'][idx])
-                
-                combos = torch.from_numpy(sample['combos'][idx])
-                
-                combos = torch.sparse.FloatTensor(combos.t(),
-                                                  torch.ones(len(combos)) * 0.5,
-                                                  torch.Size((len(combos), len(memberships))))                
+                atomtypes = sample['atomtypes']
+                atom_adjacency = sample['atom_adjacency']
+                memberships = sample['memberships']
+                res_adjacency = sample['res_adjacency']
+                target = sample['target']
+                combos = sample['combos']
 
                 # Move the data to the appropriate device
                 atom_adjacency = atom_adjacency.float().to(cuda0)
@@ -201,9 +194,6 @@ if __name__ == '__main__':
                     # Make the prediction
                     out = model(atom_adjacency, res_adjacency, atomtypes, memberships, combos)
 
-                    # Get the mean reduced loss
-    #                     loss = F.binary_cross_entropy(out, target, reduction='mean')
-
                     # Get the frequency-adjusted loss
                     loss = F.binary_cross_entropy(out, target, reduction='none')
                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
@@ -213,10 +203,6 @@ if __name__ == '__main__':
 
                     # Step the optimizer
                     opt.step()
-
-                    # Get the summed loss
-    #                     loss = F.binary_cross_entropy(out, target, reduction='sum')
-
 
                     # Get the total loss
                     total_loss += loss.data
@@ -237,9 +223,7 @@ if __name__ == '__main__':
                     
                 except RuntimeError:
                     OOM_COUNT += 1
-                    print('OOM: {}'.format(OOM_COUNT))
-                    continue
-                    
+                    tqdm.write('OOM: {}'.format(OOM_COUNT))
 
         train_loss = total_loss / total_count
         
@@ -250,48 +234,41 @@ if __name__ == '__main__':
         total_loss = 0
         
         for sample in tqdm(val_loader):
-            
-            for idx in tqdm(range(len(sample['id'])), leave=False):
 
-                # Extract the data and convert to appropriate tensor format
-                atomtypes = torch.from_numpy(sample['atomtypes'][idx][:, 3])
-                adjacency = make_sparse_mat(sample['adjacency'][idx], 'adj')
-                memberships = make_sparse_mat(sample['memberships'][idx], 'mem')
-                target = torch.from_numpy(sample['target'][idx])
-                
-                combos = torch.from_numpy(sample['combos'][idx])
-                
-                combos = torch.sparse.FloatTensor(combos.t(),
-                                                  torch.ones(len(combos)) * 0.5,
-                                                  torch.Size((len(combos), len(memberships))))
-                
-                # Move the data to the appropriate device
-                adjacency = adjacency.float().to(cuda0)
-                memberships = memberships.float().to(cuda0)
-                target = target.float().to(cuda1)
-                combos = combos.float().to(cuda0)
-                
-                try:
-                    # Make the prediction
-                    out = model(adjacency, atomtypes, memberships, combos)
+            atomtypes = sample['atomtypes']
+            atom_adjacency = sample['atom_adjacency']
+            memberships = sample['memberships']
+            res_adjacency = sample['res_adjacency']
+            target = sample['target']
+            combos = sample['combos']
 
-                    # Get the summed loss
-#                     loss = F.binary_cross_entropy(out, target, reduction='sum')
-                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+            # Move the data to the appropriate device
+            atom_adjacency = atom_adjacency.float().to(cuda0)
+            memberships = memberships.float().to(cuda0)
+            res_adjacency = res_adjacency.float().to(cuda0)
+            target = target.float().to(cuda0)
+            combos = combos.float().to(cuda0)
 
-                    # Get the total loss
-                    total_loss += loss.data
-                    total_count += 1
+            try:
+                # Make the prediction
+                out = model(adjacency, atomtypes, memberships, combos)
 
-                    # Extract data for plotting
+                # Get the summed loss
+                loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+
+                # Get the total loss
+                total_loss += loss.data
+                total_count += 1
+
+                # Extract data for plotting
 #                     pdb_id = sample['id'][idx]
 #                     out = out.data.to(cpu).numpy()
 #                     target = target.to(cpu).numpy()
-                    
+
 #                     queue.put((pdb_id, target, out, epoch))
-                
-                except RuntimeError:
-                    continue
+
+            except RuntimeError:
+                continue
                 
         val_loss = total_loss / total_count
         
