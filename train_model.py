@@ -140,14 +140,17 @@ if __name__ == '__main__':
         wandb.watch(model)
 
     # Generate the dataset/dataloader for training
-    data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt',
+#     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt',
+#                             'data/training.hdf5')
+    data = TesselateDataset('test.txt',
                             'data/training.hdf5')
     dataloader = DataLoader(data, batch_size=1, shuffle=True,
                             num_workers=0, pin_memory=False,
                             collate_fn=dict_collate)
 
-    val_data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/validation_ids.txt',
-                                'data/training.hdf5')
+#     val_data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/validation_ids.txt',
+#                                 'data/training.hdf5')
+    val_data = data
     val_loader = DataLoader(val_data, batch_size=1, shuffle=True,
                             num_workers=0, pin_memory=False,
                             collate_fn=dict_collate)
