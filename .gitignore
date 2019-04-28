@@ -22,3 +22,7 @@ figs
 
 # Ignore untitled notebooks
 Untitled*
+
+# Ignore test files
+*test.txt
+
