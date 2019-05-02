@@ -179,7 +179,7 @@ if __name__ == '__main__':
         model.eval()
         
         for sample in tqdm(val_loader, leave=False, dynamic_ncols=True):
-            pdb_id = sample['id']
+
             atomtypes = sample['atomtypes']
             atom_adjacency = sample['atom_adjacency']
             memberships = sample['memberships']
@@ -198,8 +198,7 @@ if __name__ == '__main__':
                 # Make the prediction
                 out = model(atom_adjacency, res_adjacency, atomtypes, memberships, combos)
                 
-                if epoch % 10 == 0:
-                    remap_and_plot(pdb_id, target, out, epoch)
+                
 
                 # Get the frequency-adjusted loss
                 loss = F.binary_cross_entropy(out, target, reduction='none')
@@ -210,11 +209,14 @@ if __name__ == '__main__':
                 total_count += 1
 
                 # Extract data for plotting
-#                     pdb_id = sample['id'][idx]
-#                     out = out.data.to(cpu).numpy()
-#                     target = target.to(cpu).numpy()
+                if epoch % 10 == 0:
+                    pdb_id = sample['id']
+                    out = out.data.to(cpu).numpy()
+                    target = target.to(cpu).numpy()
+                    remap_and_plot(pdb_id, target, out, epoch)
+                
 
-#                     queue.put((pdb_id, target, out, epoch))
+                queue.put((pdb_id, target, out, epoch))
 
             except RuntimeError:
                 continue
