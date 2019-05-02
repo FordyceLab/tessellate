@@ -214,6 +214,9 @@ if __name__ == '__main__':
                     out = out.data.to(cpu).numpy()
                     target = target.to(cpu).numpy()
                     remap_and_plot(pdb_id, target, out, epoch)
+                    
+                    if WANDB:
+                        wandb.log({'{}_pred_channel_{}'.format(pdb_id, i): wandb.Histogram(out[:, i]) for i in range(12)})
 
             except RuntimeError:
                 continue
@@ -221,7 +224,7 @@ if __name__ == '__main__':
         val_loss = total_loss / total_count
         
         if WANDB:
-            wandb.log({'train_loss': train_loss, 'val_loss': val_loss})
+            wandb.log({'train_loss': train_loss, 'val_loss': val_loss, })
 
     
 #     # Finish the plotting queue
