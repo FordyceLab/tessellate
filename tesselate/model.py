@@ -61,20 +61,24 @@ class Network(nn.Module):
     def forward(self, atom_adjacency, res_adjacency, atoms, membership, combos):
         
         x_in = self.embedding(atoms).to(self.device0)
+        x_out = x_in
         
         for i in range(self.n_atom_conv):
-            x_in_prop = self.atom_linear[i](atom_adjacency.mm(x_in))
-            x_in = self.atom_ggn(x_in_prop, x_in)
+            x_in_prop = self.atom_linear[i](atom_adjacency.mm(x_out)) + x_in
+            x_in = x_out
+            x_out = self.atom_ggn(x_in_prop, x_in)
             
         x_in = torch.mm(membership, x_in)
+        x_out = x_in
         
         for i in range(self.n_res_conv):
-            x_in_prop = self.res_linear[i](res_adjacency.mm(x_in))
-            x_in = self.res_ggn(x_in_prop, x_in)
+            x_in_prop = self.res_linear[i](res_adjacency.mm(x_out)) + x_in
+            x_in = x_out
+            x_out = self.res_ggn(x_in_prop, x_in)
             
-        x_in = x_in.to(self.device0)
+#         x_in = x_in.to(self.device0)
         
-        mean_combos = torch.mm(combos, x_in)
+        mean_combos = torch.mm(combos, x_out)
         
         out = self.ffn(mean_combos)
         
