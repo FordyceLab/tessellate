@@ -106,6 +106,8 @@ if __name__ == '__main__':
     OOM_COUNT=0
     for epoch in trange(100 * 1000, leave=False):
         
+        model.train()
+        
         # Sum the total loss
         total_loss = 0
         total_count = 0
@@ -173,8 +175,10 @@ if __name__ == '__main__':
         total_count = 0
         total_loss = 0
         
+        model.eval()
+        
         for sample in tqdm(val_loader, leave=False, dynamic_ncols=True):
-
+            pdb_id = sample['id']
             atomtypes = sample['atomtypes']
             atom_adjacency = sample['atom_adjacency']
             memberships = sample['memberships']
@@ -192,6 +196,9 @@ if __name__ == '__main__':
             try:
                 # Make the prediction
                 out = model(atom_adjacency, res_adjacency, atomtypes, memberships, combos)
+                
+                if epoch % 10 == 0:
+                    remap_and_plot(pdb_id, target, out, epoch)
 
                 # Get the frequency-adjusted loss
                 loss = F.binary_cross_entropy(out, target, reduction='none')

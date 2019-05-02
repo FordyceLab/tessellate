@@ -407,11 +407,12 @@ class TesselateDataset(Dataset):
 
         # Handle the target slightly differently
         # Rearrange columns
-        target = self.dataset[entry]['target'][:]#[:, [2, 0, 1]]
+        target = self.dataset[entry]['target'][:]
         
         data_dict = {}
         
         # Extract the data and convert to appropriate tensor format
+        data_dict['id'] = entry
         data_dict['atomtypes'] = torch.from_numpy(atomtypes[:, 3])
         data_dict['atom_adjacency'] = make_sparse_mat(atom_adjacency, 'adj')
         data_dict['res_adjacency'] = make_sparse_mat(res_adjacency, 'adj')
@@ -423,10 +424,6 @@ class TesselateDataset(Dataset):
         data_dict['combos'] = torch.sparse.FloatTensor(torch.from_numpy(combos.transpose()),
                                                        torch.ones(len(combos)) * 0.5,
                                                        torch.Size((len(combos), np.max(combos) + 1)))
-
-        
-        
-        torch.from_numpy(target)
         
         return data_dict
         
