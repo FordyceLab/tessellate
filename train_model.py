@@ -76,7 +76,7 @@ if __name__ == '__main__':
     model = Network(INPUT_SIZE, GRAPH_CONV, GRAPH_CONV, cuda0, cuda1)
     
     if WANDB:
-        wandb.watch(model)
+        wandb.watch(model, log='all')
 
     # Generate the dataset/dataloader for training
 #     data = TesselateDataset('id_lists/ProteinNet/ProteinNet12/x_ray/success/training_30_ids.txt',
@@ -96,7 +96,7 @@ if __name__ == '__main__':
     
 
     # Initialize the optimizer
-    opt = optim.SGD(model.parameters(), lr = .05, momentum=0.9) #, weight_decay=1e-4)
+    opt = optim.SGD(model.parameters(), lr = .1)#, momentum=0.9) #, weight_decay=1e-4)
 
     step_iter = 0
     step_loss = 0
