@@ -178,6 +178,8 @@ if __name__ == '__main__':
         
         model.eval()
         
+        pred_histograms = {}
+        
         for sample in tqdm(val_loader, leave=False, dynamic_ncols=True):
 
             atomtypes = sample['atomtypes']
@@ -216,7 +218,8 @@ if __name__ == '__main__':
                     remap_and_plot(pdb_id, target, out, epoch)
                     
                     if WANDB:
-                        wandb.log({'{}_pred_channel_{}'.format(pdb_id, i): wandb.Histogram(out[:, i]) for i in range(12)})
+                        for i in range(12):
+                            pred_histograms['{}_pred_channel_{}'.format(pdb_id, i)] = wandb.Histogram(out[:, i])
 
             except RuntimeError:
                 continue
@@ -224,7 +227,12 @@ if __name__ == '__main__':
         val_loss = total_loss / total_count
         
         if WANDB:
-            wandb.log({'train_loss': train_loss, 'val_loss': val_loss, })
+            log_dict = {'train_loss': train_loss, 'val_loss': val_loss}
+            
+            if pred_histograms:
+                log_dict.update(pred_histograms)
+            
+            wandb.log(log_dict)
 
     
 #     # Finish the plotting queue
