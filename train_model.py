@@ -5,6 +5,7 @@ import os
 import sys
 from tesselate.data import TesselateDataset, make_sparse_mat
 from tesselate.model import Network
+from tesselate.plot import remap_and_plot
 import torch
 import multiprocessing as mp
 import torch.nn as nn
