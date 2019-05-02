@@ -62,8 +62,6 @@ class Network(nn.Module):
         
         x_in = self.embedding(atoms).to(self.device0)
         
-        hidden_states = []
-        
         for i in range(self.n_atom_conv):
             x_in_prop = self.atom_linear[i](atom_adjacency.mm(x_in))
             x_in = self.atom_ggn(x_in_prop, x_in)
