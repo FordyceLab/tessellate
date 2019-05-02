@@ -214,9 +214,6 @@ if __name__ == '__main__':
                     out = out.data.to(cpu).numpy()
                     target = target.to(cpu).numpy()
                     remap_and_plot(pdb_id, target, out, epoch)
-                
-
-                queue.put((pdb_id, target, out, epoch))
 
             except RuntimeError:
                 continue
