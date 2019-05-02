@@ -96,7 +96,7 @@ if __name__ == '__main__':
     
 
     # Initialize the optimizer
-    opt = optim.SGD(model.parameters(), lr = .1)#, momentum=0.9) #, weight_decay=1e-4)
+    opt = optim.SGD(model.parameters(), lr = .05, momentum=0.9) #, weight_decay=1e-4)
 
     step_iter = 0
     step_loss = 0
@@ -176,63 +176,66 @@ if __name__ == '__main__':
         total_count = 0
         total_loss = 0
         
-        model.eval()
-        
-        pred_histograms = {}
-        
-        for sample in tqdm(val_loader, leave=False, dynamic_ncols=True):
+        if epoch % 100 != 0:
+            wandb.log({'train_loss': train_loss})
+            
+        else:
+            model.eval()
 
-            atomtypes = sample['atomtypes']
-            atom_adjacency = sample['atom_adjacency']
-            memberships = sample['memberships']
-            res_adjacency = sample['res_adjacency']
-            target = sample['target']
-            combos = sample['combos']
+            pred_histograms = {}
 
-            # Move the data to the appropriate device
-            atom_adjacency = atom_adjacency.float().to(cuda0)
-            memberships = memberships.float().to(cuda0)
-            res_adjacency = res_adjacency.float().to(cuda0)
-            target = target.float().to(cuda0)
-            combos = combos.float().to(cuda0)
+            for sample in tqdm(val_loader, leave=False, dynamic_ncols=True):
 
-            try:
-                # Make the prediction
-                out = model(atom_adjacency, res_adjacency, atomtypes, memberships, combos)
-                
-                
+                atomtypes = sample['atomtypes']
+                atom_adjacency = sample['atom_adjacency']
+                memberships = sample['memberships']
+                res_adjacency = sample['res_adjacency']
+                target = sample['target']
+                combos = sample['combos']
 
-                # Get the frequency-adjusted loss
-                loss = F.binary_cross_entropy(out, target, reduction='none')
-                loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+                # Move the data to the appropriate device
+                atom_adjacency = atom_adjacency.float().to(cuda0)
+                memberships = memberships.float().to(cuda0)
+                res_adjacency = res_adjacency.float().to(cuda0)
+                target = target.float().to(cuda0)
+                combos = combos.float().to(cuda0)
 
-                # Get the total loss
-                total_loss += loss.data
-                total_count += 1
+                try:
+                    # Make the prediction
+                    out = model(atom_adjacency, res_adjacency, atomtypes, memberships, combos)
 
-                # Extract data for plotting
-                if epoch % 10 == 0:
+
+
+                    # Get the frequency-adjusted loss
+                    loss = F.binary_cross_entropy(out, target, reduction='none')
+                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+
+                    # Get the total loss
+                    total_loss += loss.data
+                    total_count += 1
+
+                    # Extract data for plotting
                     pdb_id = sample['id']
                     out = out.data.to(cpu).numpy()
                     target = target.to(cpu).numpy()
                     remap_and_plot(pdb_id, target, out, epoch)
-                    
+
                     if WANDB:
                         for i in range(12):
                             pred_histograms['{}_pred_channel_{}'.format(pdb_id, i)] = wandb.Histogram(out[:, i])
 
-            except RuntimeError:
-                continue
-                
-        val_loss = total_loss / total_count
-        
-        if WANDB:
-            log_dict = {'train_loss': train_loss, 'val_loss': val_loss}
-            
-            if pred_histograms:
-                log_dict.update(pred_histograms)
-            
-            wandb.log(log_dict)
+                except RuntimeError:
+                    continue
+
+            val_loss = total_loss / total_count
+
+            if WANDB:
+                log_dict = {'train_loss': train_loss, 'val_loss': val_loss}
+
+                if pred_histograms:
+                    log_dict.update(pred_histograms)
+
+                wandb.log(log_dict)
 
     
 #     # Finish the plotting queue
