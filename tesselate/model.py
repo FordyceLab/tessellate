@@ -52,8 +52,8 @@ class Network(nn.Module):
         self.atom_linear = [nn.Linear(input_size, input_size, bias=False).to(device0) for layer in range(self.n_atom_conv)]
         self.res_linear = [nn.Linear(input_size, input_size, bias=False).to(device0) for layer in range(self.n_res_conv)]
         
-        self.atom_ggn = GGNUnit(input_size).to(device0)
-        self.res_ggn = GGNUnit(input_size).to(device0)
+#         self.atom_ggn = GGNUnit(input_size).to(device0)
+#         self.res_ggn = GGNUnit(input_size).to(device0)
         
         self.ffn = FFN(input_size).to(device0)
         
@@ -66,16 +66,15 @@ class Network(nn.Module):
             x_in = F.relu(self.atom_linear[i](atom_adjacency.mm(x_in)))
             
         x_in = torch.mm(membership, x_in)
-        x_out = x_in
         
         for i in range(self.n_res_conv):
-            x_in = F.relu(self.atom_linear[i](atom_adjacency.mm(x_in)))
+            x_in = F.relu(self.res_linear[i](res_adjacency.mm(x_in)))
 #             x_in = x_out
 #             x_out = self.res_ggn(x_in_prop, x_in)
             
 #         x_in = x_in.to(self.device0)
         
-        mean_combos = torch.mm(combos, x_out)
+        mean_combos = torch.mm(combos, x_in)
         
         out = self.ffn(mean_combos)
         
