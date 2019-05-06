@@ -49,8 +49,8 @@ class Network(nn.Module):
         self.n_atom_conv = n_atom_conv
         self.n_res_conv = n_res_conv
         
-        self.atom_linear = [nn.Linear(input_size, input_size).to(device0) for i in range(n_atom_conv)]
-        self.res_linear = [nn.Linear(input_size, input_size).to(device0) for i in range(n_res_conv)]
+        self.atom_linear = nn.Linear(input_size, input_size).to(device0)
+        self.res_linear = nn.Linear(input_size, input_size).to(device0)
         
         self.atom_ggn = GGNUnit(input_size).to(device0)
         self.res_ggn = GGNUnit(input_size).to(device0)
@@ -64,8 +64,7 @@ class Network(nn.Module):
         x_out = x_in
         
         for i in range(self.n_atom_conv):
-            x_in_prop = self.atom_linear[i](atom_adjacency.mm(x_out)) + x_in
-            x_in_prop = F.relu(x_in_prop)
+            x_in_prop = F.relu(self.atom_linear(atom_adjacency.mm(x_out)) + x_in)
             x_in = x_out
             x_out = self.atom_ggn(x_in_prop, x_in)
             
@@ -73,8 +72,7 @@ class Network(nn.Module):
         x_out = x_in
         
         for i in range(self.n_res_conv):
-            x_in_prop = self.res_linear[i](res_adjacency.mm(x_out)) + x_in
-            x_in_prop = F.relu(x_in_prop)
+            x_in_prop = F.relu(self.res_linear(res_adjacency.mm(x_out)) + x_in)
             x_in = x_out
             x_out = self.res_ggn(x_in_prop, x_in)
             
