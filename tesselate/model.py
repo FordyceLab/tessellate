@@ -65,6 +65,7 @@ class Network(nn.Module):
         
         for i in range(self.n_atom_conv):
             x_in_prop = self.atom_linear[i](atom_adjacency.mm(x_out)) + x_in
+            x_in_prop = F.relu(x_in_prop)
             x_in = x_out
             x_out = self.atom_ggn(x_in_prop, x_in)
             
@@ -73,6 +74,7 @@ class Network(nn.Module):
         
         for i in range(self.n_res_conv):
             x_in_prop = self.res_linear[i](res_adjacency.mm(x_out)) + x_in
+            x_in_prop = F.relu(x_in_prop)
             x_in = x_out
             x_out = self.res_ggn(x_in_prop, x_in)
             
