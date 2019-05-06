@@ -49,8 +49,8 @@ class Network(nn.Module):
         self.n_atom_conv = n_atom_conv
         self.n_res_conv = n_res_conv
         
-        self.atom_linear = [nn.Linear(input_size, input_size, bias=False).to(device0) for layer in self.n_atom_conv]
-        self.res_linear = [nn.Linear(input_size, input_size, bias=False).to(device0) for layer in self.n_res_conv]
+        self.atom_linear = [nn.Linear(input_size, input_size, bias=False).to(device0) for layer in rangeself.n_atom_conv)]
+        self.res_linear = [nn.Linear(input_size, input_size, bias=False).to(device0) for layer in rangeself.n_res_conv)]
         
         self.atom_ggn = GGNUnit(input_size).to(device0)
         self.res_ggn = GGNUnit(input_size).to(device0)
