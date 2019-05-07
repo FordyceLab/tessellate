@@ -24,5 +24,5 @@ figs
 Untitled*
 
 # Ignore test files
-*test.txt
+*test*.txt
 
