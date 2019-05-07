@@ -45,7 +45,7 @@ def dict_collate(batch):
 
 if __name__ == '__main__':
     
-    monitor = True
+    monitor = False
     
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
@@ -142,10 +142,12 @@ if __name__ == '__main__':
                     out = model(atom_adjacency, res_adjacency, atomtypes, memberships, combos)
 
                     # Get the frequency-adjusted loss
-#                     loss = F.binary_cross_entropy(out, target, reduction='none')
+                    loss = F.binary_cross_entropy(out, target, reduction='none')
 #                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
 
-                    loss = F.binary_cross_entropy(out, target, reduction='mean')
+                    loss = loss.mean(0)[8]
+
+#                     loss = F.binary_cross_entropy(out, target, reduction='mean')
 
                     # Make the backward pass
                     loss.backward()
@@ -214,10 +216,12 @@ if __name__ == '__main__':
 
 
                     # Get the frequency-adjusted loss
-#                     loss = F.binary_cross_entropy(out, target, reduction='none')
+                    loss = F.binary_cross_entropy(out, target, reduction='none')
 #                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
                     
-                    loss = F.binary_cross_entropy(out, target, reduction='mean')
+#                     loss = F.binary_cross_entropy(out, target, reduction='mean')
+
+                    loss = loss.mean(0)[8]
 
                     # Get the total loss
                     total_loss += loss.data
