@@ -45,19 +45,22 @@ def dict_collate(batch):
 
 if __name__ == '__main__':
     
+    monitor = True
+    
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
-    repo = Repo('.')
-    if repo.is_dirty():
-        print("Git repo is dirty, please commit changes before training model.")
-        sys.exit(1)
+    if monitor:
+        repo = Repo('.')
+        if repo.is_dirty():
+            print("Git repo is dirty, please commit changes before training model.")
+            sys.exit(1)
     
     # Initialize the multiprocessing capabilities for plotting
 #     multiprocessing.set_start_method('spawn')
 #     queue = mp.Queue()
 #     p = mp.Pool(10, plot_worker, (queue,))
 
-    WANDB = True
+    WANDB = monitor
     
     if WANDB:
         wandb.init(project='tesselate', config={'commit': repo.head.object.hexsha})
@@ -178,7 +181,8 @@ if __name__ == '__main__':
         total_loss = 0
         
         if epoch % 100 != 0:
-            wandb.log({'train_loss': train_loss})
+            if WANDB:
+                wandb.log({'train_loss': train_loss})
             
         else:
             model.eval()

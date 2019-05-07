@@ -42,9 +42,18 @@ class Network(nn.Module):
         
         self.input_size = input_size
         
-        self.embedding = nn.Embedding(116,
-                                      input_size,
-                                      scale_grad_by_freq=True)
+#         self.embedding = nn.Embedding(116,
+#                                       input_size,
+#                                       scale_grad_by_freq=True)
+        
+        embeddings = torch.randn(116, input_size)
+        
+        for i in range(len(embeddings)):
+            embeddings[i, 0] = i + 1
+        
+        self.embedding = nn.Embedding.from_pretrained(embeddings,
+                                                      freeze=False,
+                                                      scale_grad_by_freq=True)
         
         self.n_atom_conv = n_atom_conv
         self.n_res_conv = n_res_conv
