@@ -142,8 +142,10 @@ if __name__ == '__main__':
                     out = model(atom_adjacency, res_adjacency, atomtypes, memberships, combos)
 
                     # Get the frequency-adjusted loss
-                    loss = F.binary_cross_entropy(out, target, reduction='none')
-                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+#                     loss = F.binary_cross_entropy(out, target, reduction='none')
+#                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+
+                    loss = F.binary_cross_entropy(out, target, reduction='mean')
 
                     # Make the backward pass
                     loss.backward()
@@ -212,8 +214,10 @@ if __name__ == '__main__':
 
 
                     # Get the frequency-adjusted loss
-                    loss = F.binary_cross_entropy(out, target, reduction='none')
-                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+#                     loss = F.binary_cross_entropy(out, target, reduction='none')
+#                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+                    
+                    loss = F.binary_cross_entropy(out, target, reduction='mean')
 
                     # Get the total loss
                     total_loss += loss.data
