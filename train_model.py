@@ -45,7 +45,7 @@ def dict_collate(batch):
 
 if __name__ == '__main__':
     
-    monitor = False
+    monitor = True
     
     # Check to make sure the repo is clean
     # Since we are logging git commits to track model changes over time
