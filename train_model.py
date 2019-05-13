@@ -151,7 +151,7 @@ if __name__ == '__main__':
                     loss = F.binary_cross_entropy(out, target, reduction='none')
                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
 
-                    loss = loss.mean(0)[8]
+#                     loss = loss.mean(0)[8]
 
 #                     loss = F.binary_cross_entropy(out, target, reduction='mean')
 
