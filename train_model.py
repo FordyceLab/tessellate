@@ -143,44 +143,44 @@ if __name__ == '__main__':
                 target = target.float().to(cuda0)
                 combos = combos.float().to(cuda0)
 
-                try:
-                    # Make the prediction
-                    out = model(atom_adjacency, res_adjacency, atomtypes, memberships, combos)
+#                 try:
+                # Make the prediction
+                out = model(atom_adjacency, res_adjacency, atomtypes, memberships, combos)
 
-                    # Get the frequency-adjusted loss
-                    loss = F.binary_cross_entropy(out, target, reduction='none')
-                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+                # Get the frequency-adjusted loss
+                loss = F.binary_cross_entropy(out, target, reduction='none')
+#                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
 
-#                     loss = loss.mean(0)[8]
+                loss = loss.mean(0)[8]
 
 #                     loss = F.binary_cross_entropy(out, target, reduction='mean')
 
-                    # Make the backward pass
-                    loss.backward()
+                # Make the backward pass
+                loss.backward()
 
-                    # Step the optimizer
-                    opt.step()
+                # Step the optimizer
+                opt.step()
 
-                    # Get the total loss
-                    total_loss += loss.data
-                    total_count += 1
+                # Get the total loss
+                total_loss += loss.data
+                total_count += 1
 
-                    step_loss += loss.data
-                    step_count += 1
-                    step_iter += 1
+                step_loss += loss.data
+                step_count += 1
+                step_iter += 1
 
-                    if step_iter % 1000 == 0 and WANDB:
-                        step_loss = step_loss / step_count
-                        wandb.log({'step_loss': step_loss})
+                if step_iter % 1000 == 0 and WANDB:
+                    step_loss = step_loss / step_count
+                    wandb.log({'step_loss': step_loss})
 
-                        step_loss = 0
-                        step_count = 0
+                    step_loss = 0
+                    step_count = 0
 
-                        torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step_iter)))
+                    torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'step_{}.pt'.format(step_iter)))
                     
-                except RuntimeError:
-                    OOM_COUNT += 1
-                    tqdm.write('OOM: {}'.format(OOM_COUNT))
+#                 except RuntimeError:
+#                     OOM_COUNT += 1
+#                     tqdm.write('OOM: {}'.format(OOM_COUNT))
 
         train_loss = total_loss / total_count
         
@@ -223,7 +223,9 @@ if __name__ == '__main__':
 
                     # Get the frequency-adjusted loss
                     loss = F.binary_cross_entropy(out, target, reduction='none')
-                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+#                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+                    
+                    loss = loss.mean(0)[8]
                     
 #                     loss = F.binary_cross_entropy(out, target, reduction='mean')
 
