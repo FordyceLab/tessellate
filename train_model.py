@@ -149,7 +149,7 @@ if __name__ == '__main__':
 
                     # Get the frequency-adjusted loss
                     loss = F.binary_cross_entropy(out, target, reduction='none')
-#                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
 
                     loss = loss.mean(0)[8]
 
@@ -184,8 +184,8 @@ if __name__ == '__main__':
 
         train_loss = total_loss / total_count
         
-        if WANDB:
-            torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'epoch_{}.pt'.format(epoch)))
+#         if WANDB:
+#             torch.save(model.state_dict(), os.path.join(wandb.run.dir, 'epoch_{}.pt'.format(epoch)))
             
         total_count = 0
         total_loss = 0
@@ -223,11 +223,9 @@ if __name__ == '__main__':
 
                     # Get the frequency-adjusted loss
                     loss = F.binary_cross_entropy(out, target, reduction='none')
-#                     loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
+                    loss = torch.sum(loss * target) / torch.sum(target) + torch.sum(loss * torch.abs(target - 1))  / torch.sum(torch.abs(target - 1))
                     
 #                     loss = F.binary_cross_entropy(out, target, reduction='mean')
-
-                    loss = loss.mean(0)[8]
 
                     # Get the total loss
                     total_loss += loss.data
