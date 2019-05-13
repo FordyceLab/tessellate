@@ -129,6 +129,12 @@ if __name__ == '__main__':
                 res_adjacency = sample['res_adjacency']
                 target = sample['target']
                 combos = sample['combos']
+                
+                d_atom = (atom_adjacency.to_dense() > 0).type(torch.FloatTensor).sum(dim=1)
+                d_res = (res_adjacency.to_dense() > 0).type(torch.FloatTensor).sum(dim=1)
+                
+                atom_adjacency = (atom_adjacency.type(torch.FloatTensor).to_dense() / d_atom).to_sparse()
+                res_adjacency = (res_adjacency.type(torch.FloatTensor).to_dense() / d_res).to_sparse()
 
                 # Move the data to the appropriate device
                 atom_adjacency = atom_adjacency.float().to(cuda0)
@@ -184,7 +190,7 @@ if __name__ == '__main__':
         total_count = 0
         total_loss = 0
         
-        if epoch % 100 != 0:
+        if epoch % 1000 != 0:
             if WANDB:
                 wandb.log({'train_loss': train_loss})
             
