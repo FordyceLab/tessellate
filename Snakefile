@@ -173,4 +173,4 @@ rule sync_PDB:
     input:
         PN_PARENT_DIR + '/PDB/pdb'
     shell:
-        'bash rsyncPDB.sh'
+        'bash scripts/rsyncPDB.sh'
