@@ -22,9 +22,10 @@
 # You should CHANGE THE NEXT THREE LINES to suit your local setup
 ############################################################################
 
-MIRRORDIR=/shared_data/protein_structure/PDB/pdb    # your top level rsync directory
-LOGFILE=/home/tshimko/logs/pdb_rsync.log            # file for storing logs
-RSYNC=/usr/bin/rsync                                # location of local rsync
+PDB_MIRRORDIR=/shared_data/protein_structure/PDB/pdb    # your top level rsync directory
+CIF_MIRRORDIR=/shared_data/protein_structure/PDB/cif    # your top level rsync directory
+LOGFILE=/home/tshimko/logs/pdb_rsync.log                # file for storing logs
+RSYNC=/usr/bin/rsync                                    # location of local rsync
 
 ##########################################################################################
 #
@@ -91,13 +92,13 @@ PORT=33444                                                    # port RCSB PDB se
 ############################################################################
 # Rsync only the PDB format coordinates  /pub/pdb/data/structures/divided/pdb (Aproximately 20 GB)
 ############################################################################
-${RSYNC} -rlpt -v -z -L --delete --port=$PORT ${SERVER}/data/structures/all/pdb/ $MIRRORDIR > $LOGFILE 2>/dev/null
+${RSYNC} -rlpt -v -z -L --delete --port=$PORT ${SERVER}/data/structures/all/pdb/ $PDB_MIRRORDIR > $LOGFILE 2>/dev/null
 
 
 ############################################################################
 # Rsync only the mmCIF format coordinates  /pub/pdb/data/structures/divided/mmCIF (Aproximately 24 GB)
 ############################################################################
-#${RSYNC} -rlpt -v -z --delete --port=$PORT ${SERVER}/data/structures/divided/mmCIF/ $MIRRORDIR > $LOGFILE 2>/dev/null
+${RSYNC} -rlpt -v -z --delete --port=$PORT ${SERVER}/data/structures/divided/mmCIF/ $CIF_MIRRORDIR > $LOGFILE 2>/dev/null
 
 
 ############################################################################
