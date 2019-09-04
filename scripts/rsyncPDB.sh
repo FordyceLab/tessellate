@@ -98,7 +98,7 @@ ${RSYNC} -rlpt -v -z -L --delete --port=$PORT ${SERVER}/data/structures/all/pdb/
 ############################################################################
 # Rsync only the mmCIF format coordinates  /pub/pdb/data/structures/divided/mmCIF (Aproximately 24 GB)
 ############################################################################
-${RSYNC} -rlpt -v -z --delete --port=$PORT ${SERVER}/data/structures/divided/mmCIF/ $CIF_MIRRORDIR > $LOGFILE 2>/dev/null
+${RSYNC} -rlpt -v -z -L --delete --port=$PORT ${SERVER}/data/structures/all/mmCIF/ $CIF_MIRRORDIR > $LOGFILE 2>/dev/null
 
 
 ############################################################################
