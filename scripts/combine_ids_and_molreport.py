@@ -204,11 +204,15 @@ def fill_gaps(seq_atoms, seq_bonds, struct_atoms, struct_bonds):
         
         chain_atoms = struct_atoms[(struct_atoms['chain'] == chain)]
 
-        chain_bonds = struct_bonds[(struct_bonds['start_chain'] == chain) & (struct_bonds['end_chain'] == chain)]
+        chain_bonds = struct_bonds[(struct_bonds['start_chain'] == chain) | (struct_bonds['end_chain'] == chain)]
         
         G = nx.from_pandas_edgelist(chain_bonds, source='start', target='end')
 
-        if not nx.is_connected(G):
+        if nx.is_connected(G):
+            atoms.append(chain_atoms)
+            bonds.append(chain_bonds)
+            
+        else:
             present, absent, breakpoints = identify_gaps(chain_atoms)
             clean_atoms, clean_bonds, added_atoms = patch_gaps(chain_atoms, chain_bonds, seq_atoms, seq_bonds, absent, breakpoints)
             
@@ -216,7 +220,10 @@ def fill_gaps(seq_atoms, seq_bonds, struct_atoms, struct_bonds):
             bonds.append(clean_bonds)
             masked_atoms.extend(added_atoms)
 
-    return (pd.concat(atoms), pd.concat(bonds), masked_atoms)
+    out_atoms = pd.concat(atoms)
+    out_bonds = pd.concat(bonds).drop_duplicates()
+            
+    return (out_atoms, out_bonds, masked_atoms)
 
 
 if __name__ == '__main__':
