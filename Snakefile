@@ -57,7 +57,7 @@ rule clean_PDB_file:
 # Get contacts #
 ################
 
-rule split_cif_file:
+checkpoint split_cif_file:
     input:
         PN_PARENT_DIR + '/PDB/cif/{pdb_id}.cif.gz'
     output:
@@ -72,7 +72,7 @@ rule split_cif_file:
         
 rule mv_bioassemblies:
     input:
-        rules.split_cif_file.output
+        checkpoints.split_cif_file.get().output
     output:
         TMP_DIR + '/{pdb_id}/{number,\d+}/{pdb_id}-{number}.cif'
     shell:
@@ -105,7 +105,7 @@ rule clean_h:
 
 rule get_full_contacts:
     input:
-        rules.clean_h.output
+        rules.add_h.output
     output:
         LOCAL_DATA_DIR + '/contacts/{pdb_id}-{number,\d+}.full_contacts'
     shell:
@@ -142,7 +142,8 @@ rule remove_solvent:
         'docker run --rm -i \
             -u $(id -u ${{USER}}):$(id -g ${{USER}}) \
             -v $(pwd)/{TMP_DIR}/{wildcards.pdb_id}/{wildcards.number}:/data pymol:latest \
-            pymol -c -d "load /data/{wildcards.pdb_id}-{wildcards.number}.cif; \
+            pymol -c -d "set cif_use_auth, off; \
+                load /data/{wildcards.pdb_id}-{wildcards.number}.cif; \
                 remove (hydro); remove solvent; \
                 save /data/{wildcards.pdb_id}-{wildcards.number}_no_solvent.cif"'
                 
@@ -165,7 +166,7 @@ rule cif_no_solvent2id:
     output:
         TMP_DIR + '/{pdb_id}/{number,\d+}/{pdb_id}-{number}_no_solvent.id'
     shell:
-        'awk \'/^(HET)?ATOM/{{OFS=\"\\t\"; print $2,$7":"$6":"$9":"$4,$3}}\' \
+        'awk \'/^(HET)?ATO?M/{{OFS=\"\\t\"; print $2,$7":"$6":"$9":"$4,$3}}\' \
          {input} > {output}'
                 
 
@@ -206,8 +207,23 @@ rule fasta2id:
                 obabel \
                 /data/{wildcards.pdb_id}-{wildcards.number}_{wildcards.chain}.fa \
                 -opdb | \
-                awk \'/^COMPND/{{CHAIN = $2}} /^(HET)?ATOM/{{OFS=\"\\t\"; $5 = CHAIN; print $2,$5":"$4":"$6":"$3,$12}}\' \
+                awk \'/^COMPND/{{CHAIN = $2}} /^(HET)?ATO?M/{{OFS=\"\\t\"; $5 = CHAIN; \
+                    print $2,$5":"$4":"$6":"$3,$12}}\' \
                 > {output}'
+                
+rule process_graph:
+    input:
+        rules.fasta2molreport.output,
+        rules.fasta2id.output,
+        rules.cif_no_solvent2molreport.output,
+        rules.cif_no_solvent2id.output
+    output:
+        nodes = LOCAL_DATA_DIR + '/graphs/{pdb_id}-{number,\d+}_nodes.csv',
+        edges = LOCAL_DATA_DIR + '/graphs/{pdb_id}-{number}_edges.csv',
+        mask = LOCAL_DATA_DIR + '/graphs/{pdb_id}-{number}_mask.txt'
+    shell:
+        'python scripts/combine_ids_and_molreport.py {output.nodes} {output.edges} {output.mask} {input}'
+        
 
 ###############################
 # Process ProteinNet ID lists #
@@ -291,7 +307,6 @@ rule filter_type_structures:
         ID_LIST_DIR + '/ProteinNet/ProteinNet{comp_number,\d+}/{type([a-z|\_])+}/{in_file}.txt'
     shell:
         'comm -12 <( sort {input.type_file} ) <( sort {input.ids} ) > {output}'
-
 
 # Download PDB entry type list
 rule download_PDB_entry_type:

@@ -77,7 +77,7 @@ if __name__ == '__main__':
             seq = chain_seq_map[unique_chain]
             
             # Write to fasta
-            outfile = filename.replace('.cif', '_{}.fa'.format(unique_chain))
+            outfile = filename.replace('.cif', '_{}.fa'.format(chain_id))
 
             with open(outfile, 'w') as out_handle:
                 out_handle.write('>{}\n{}\n'.format(chain_id, seq))
