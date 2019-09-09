@@ -13,7 +13,7 @@ Free for use in any way you see fit but you have to leave this notice
 in place and in effect in derived works.
 '''
 
-import sys, urllib, gzip, cStringIO, re, os.path, pprint, string
+import sys, urllib.request, urllib.parse, urllib.error, gzip, io, re, os.path, pprint, string
 
 # this phrase precedes a matrix
 group_start_marker = 'APPLY THE FOLLOWING TO CHAINS:'
@@ -98,17 +98,17 @@ def load_remote_pdb(pdbcode):
     pdbcode = pdbcode.split('.')[0].lower()
 
     if len(pdbcode) != 4 or re.findall('\W', pdbcode):
-        raise PdbError, 'malformed pdb code'
+        raise PdbError('malformed pdb code')
 
     # pdb code looks o.k. - let's try
     url = urltemplate % pdbcode
-    request = urllib.urlopen(url)
+    request = urllib.request.urlopen(url)
     binary = request.read()
-    pseudo_file = cStringIO.StringIO(binary)
+    pseudo_file = io.StringIO(binary)
     try:
         extracted = gzip.GzipFile('','r',0,pseudo_file).read()
     except IOError:
-        raise PdbError, 'invalid pdb code'
+        raise PdbError('invalid pdb code')
 
     return extracted
 
@@ -278,7 +278,7 @@ class BioMolecule(object):
         # first, assign available letters to chains.
         orig_chains = set()
         for rg in self.replication_groups:
-            orig_chains.update(rg.replicated_chains.keys())
+            orig_chains.update(list(rg.replicated_chains.keys()))
 
         orig_chains = sorted(list(orig_chains))
 
@@ -291,7 +291,7 @@ class BioMolecule(object):
 
             while True:
                 residue_offset = 0
-                for x in xrange(self.options['renamechains']):
+                for x in range(self.options['renamechains']):
                     yield chain_list[chain_counter], residue_offset
                     residue_offset += self.options['renumberresidues']
                 chain_counter += 1
@@ -310,7 +310,7 @@ class BioMolecule(object):
         for rg in self.replication_groups:
             for old_chain, chains in sorted(rg.replicated_chains.items()):
                 for chain in chains:
-                    new_chain, residue_offset = chain_store[old_chain].next()
+                    new_chain, residue_offset = next(chain_store[old_chain])
 
                     lst = []
                     atom_offset = atom_numbers[new_chain]
@@ -399,7 +399,7 @@ class PdbReplicator(object):
         self.pdb_lines = pdb_string.splitlines()
         self.options = options
         # if we have 0, it means indeed never rename
-        self.options['renamechains'] = self.options['renamechains'] or sys.maxint
+        self.options['renamechains'] = self.options['renamechains'] or sys.maxsize
 
         self.originalchains = self.parseMolecule()
         self.output = []
@@ -414,7 +414,7 @@ class PdbReplicator(object):
         bm_lines = [l[10:].strip() for l in self.pdb_lines if l.startswith('REMARK 350')]
 
         if not bm_lines:    # this file doesn't have any biomt instructions for us.
-            raise PdbError, 'input file does not contain any BIOMT instructions'
+            raise PdbError('input file does not contain any BIOMT instructions')
 
         # OK, try to carve up the biomolecules
         biomolecules = []
