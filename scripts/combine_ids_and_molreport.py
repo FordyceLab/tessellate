@@ -91,7 +91,8 @@ def merge_molreport_ids(molreport_atoms, molreport_bonds, ids):
 
 def strip_hydrogen(atoms, bonds):
     atoms = atoms[atoms['element'] != 'H']
-    bonds = bonds[bonds['start'].isin(atoms['atom']) & bonds['start'].isin(atoms['atom'])]
+    
+    bonds = bonds[bonds['start'].isin(atoms['atom']) & bonds['end'].isin(atoms['atom'])]
     
     return (atoms, bonds)
 
