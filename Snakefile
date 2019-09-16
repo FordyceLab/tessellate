@@ -77,7 +77,9 @@ rule get_full_contacts:
             -v $(pwd)/{LOCAL_DATA_DIR}/contacts:/data_out \
             getcontacts:latest \
             get_static_contacts.py --structure /data_in/{wildcards.pdb_id}-{wildcards.number}_hydro.pdb \
-                --output /data_out/{wildcards.pdb_id}-{wildcards.number}.full_contacts --itypes all'
+                --output /data_out/{wildcards.pdb_id}-{wildcards.number}.full_contacts \
+                --sele "(protein or nucleic) or not (protein or nucleic or solv or lipid)"\
+                --itypes all'
                 
 rule simplify_contacts:
     input:
