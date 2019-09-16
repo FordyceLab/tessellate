@@ -128,6 +128,7 @@ def augment_atoms(atoms):
     
     return atoms
 
+
 def identify_gaps(chain_atoms):
     min_num = chain_atoms['num'].min()
     max_num = chain_atoms['num'].max()
@@ -155,43 +156,78 @@ def identify_gaps(chain_atoms):
             absent.append(i)
             
     return (present, absent, breakpoints)
-            
+
+
 def patch_gaps(chain_atoms, chain_bonds, seq_atoms, seq_bonds, absent, breakpoints):
+    all_missing = []
+    
     # Get chain ID
     chain = chain_atoms['chain'].unique()[0]
     
     # Get missing atoms and bonds
-    missing_atoms = seq_atoms[(seq_atoms['chain'] == chain) & (seq_atoms['num'].isin(absent))]
+    missing_atoms = seq_atoms[(seq_atoms['chain'] == chain) &
+                              (seq_atoms['num'].isin(absent)) &
+                              (~seq_atoms['atom'].isin(chain_atoms['atom']))]
+    
     missing_bonds = seq_bonds[seq_bonds['start'].isin(missing_atoms['atom']) | seq_bonds['end'].isin(missing_atoms['atom'])]
     
     chain_atoms = pd.concat([chain_atoms, missing_atoms])
     chain_bonds = pd.concat([chain_bonds, missing_bonds])
+    
+    all_missing.append(missing_atoms)
     
     # Check if missing atoms alone complete the chain
     G = nx.from_pandas_edgelist(chain_bonds, source='start', target='end')
     
     # If still not connected, merge breakpoint residues
     if not nx.is_connected(G):
-        
         # Get missing atoms and bonds
         missing_atoms = seq_atoms[(seq_atoms['chain'] == chain) & (seq_atoms['num'].isin(breakpoints))]
         
         # Select only atoms with the same residue name
-        missing_atoms = pd.merge(chain_atoms[['chain', 'res', 'num']], missing_atoms, how='inner', on=['chain', 'res', 'num', ])
+        missing_atoms = pd.merge(chain_atoms[['chain', 'res', 'num']], missing_atoms, how='inner', on=['chain', 'res', 'num'])
         missing_atoms = missing_atoms[~missing_atoms['atom'].isin(chain_atoms)]
+        all_missing.append(missing_atoms)
         
         # Get missing bonds
         missing_bonds = seq_bonds[seq_bonds['start'].isin(missing_atoms['atom']) | seq_bonds['end'].isin(missing_atoms['atom'])]
 
         # Add missing bonds and atoms
-        chain_atoms = pd.concat([chain_atoms, missing_atoms])
-        chain_bonds = pd.concat([chain_bonds, missing_bonds])
+        chain_atoms = pd.concat([chain_atoms, missing_atoms], axis=0, sort=False)
+        
+        # Add missing bonds
+        missing_bonds = seq_bonds[seq_bonds['start'].isin(chain_atoms['atom']) & \
+                                      seq_bonds['end'].isin(chain_atoms['atom'])]
+        chain_bonds = pd.merge(chain_bonds, missing_bonds, how='outer', on=list(chain_bonds.columns))
 
         # Check if missing atoms alone complete the chain
         G = nx.from_pandas_edgelist(chain_bonds, source='start', target='end')
         
-    assert nx.is_connected(G)    
-    return (chain_atoms, chain_bonds, list(missing_atoms['atom']))
+        if not nx.is_connected(G):
+           
+            missing_atoms = seq_atoms[(seq_atoms['chain'] == chain) &
+                                      (seq_atoms['num'].isin(chain_atoms['num'])) &
+                                      (~seq_atoms['atom'].isin(chain_atoms['atom']))]
+
+
+            chain_atoms = pd.concat([chain_atoms, missing_atoms], axis=0, sort=False)
+
+            # Get missing bonds
+            missing_bonds = seq_bonds[seq_bonds['start'].isin(chain_atoms['atom']) | \
+                                      seq_bonds['end'].isin(chain_atoms['atom'])]
+
+            chain_bonds = pd.concat([chain_bonds, missing_bonds], axis=0, sort=False)
+
+            all_missing.append(missing_atoms)
+
+            G = nx.from_pandas_edgelist(chain_bonds, source='start', target='end')
+        
+    assert nx.is_connected(G)
+    
+    missing_atoms = pd.concat(all_missing, axis=0, sort=False)
+    
+    return (chain_atoms, chain_bonds, list(missing_atoms['atom'].unique()))
+
 
 def fill_gaps(seq_atoms, seq_bonds, struct_atoms, struct_bonds):
 
@@ -215,16 +251,48 @@ def fill_gaps(seq_atoms, seq_bonds, struct_atoms, struct_bonds):
             
         else:
             present, absent, breakpoints = identify_gaps(chain_atoms)
+            
+            # Add any disconnects not found by residue gap check
+            breakpoints.extend(check_res_connections(chain_bonds))
+            
             clean_atoms, clean_bonds, added_atoms = patch_gaps(chain_atoms, chain_bonds, seq_atoms, seq_bonds, absent, breakpoints)
             
             atoms.append(clean_atoms)
             bonds.append(clean_bonds)
             masked_atoms.extend(added_atoms)
 
-    out_atoms = pd.concat(atoms)
+    out_atoms = pd.concat(atoms).drop_duplicates()
     out_bonds = pd.concat(bonds).drop_duplicates()
             
     return (out_atoms, out_bonds, masked_atoms)
+
+
+def check_res_connections(bonds):
+    disconnects = []
+    
+    simple_bonds = bonds[['start_chain', 'start_num', 'end_chain', 'end_num']].drop_duplicates()
+    
+    chains = sorted(list(set(list(simple_bonds['start_chain'].unique()) +
+                             list(simple_bonds['end_chain'].unique()))))
+    
+    for chain in chains:
+        
+        # Get residue-residue bonds
+        chain_bonds = simple_bonds.loc[simple_bonds['start_chain'] == chain, ['start_num', 'end_num']].drop_duplicates()
+        chain_bonds = chain_bonds.loc[simple_bonds['start_num'] != simple_bonds['end_num']]
+        
+        # Extract all of the connections
+        cxns = [sorted([chain_bonds.iloc[i, 0], chain_bonds.iloc[i, 1]]) for i in range(len(chain_bonds))]
+        
+        res_nums = list(chain_bonds['start_num']) + list(chain_bonds['end_num'])
+        max_num = max(res_nums)
+        min_num = min(res_nums)
+        
+        for i in range(min_num, max_num):
+            if [i, i+1] not in cxns:
+                disconnects.extend([i, i+1])
+    
+    return disconnects
 
 
 if __name__ == '__main__':
@@ -280,6 +348,9 @@ if __name__ == '__main__':
     struct_bonds = augment_bonds(struct_bonds)
 
     out_atoms, out_bonds, masked_atoms = fill_gaps(seq_atoms, seq_bonds, struct_atoms, struct_bonds)
+    
+    out_atoms = out_atoms.sort_values(['chain', 'num'],
+                                      ascending=[True, True]).drop(columns=['charge']).drop_duplicates()
     
     out_atoms.to_csv(nodes_out, index=False, columns=['atom', 'element'])
     out_bonds.to_csv(edges_out, index=False, columns=['start', 'end', 'order'])
