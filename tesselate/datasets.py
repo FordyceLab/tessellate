@@ -1,6 +1,9 @@
-import data_utils as du
+import torch
 from torch.utils.data import Dataset
 import numpy as np
+import periodictable as pt
+
+from .data_utils import *
 
 class TesselateDataset(Dataset):
     """
@@ -93,12 +96,16 @@ class TesselateDataset(Dataset):
             model = acc_entry[1]
             
         # Read and process the files
-        data = du.read_files(acc, model, self.graph_dir, self.contacts_dir)
-        data = du.process_res_data(data)
+        data = read_files(acc, model, self.graph_dir, self.contacts_dir)
+        data = process_res_data(data)
         
         # Generate the mapping dictionaries
-        atom2idx_dict, idx2atom_dict = du.get_map_dicts(data['atom_nodes']['atom'])
-        res2idx_dict, idx2res_dict = du.get_map_dicts(data['res_nodes']['res'])
+        atom2idx_dict, idx2atom_dict = get_map_dicts(data['atom_nodes']['atom'].unique())
+        res2idx_dict, idx2res_dict = get_map_dicts(data['res_nodes']['res'].unique())
+        
+        # Get numbers of atoms and residues per sample
+        n_atoms = len(atom2idx_dict)
+        n_res = len(res2idx_dict)
         
         # Handle all of the possible returned datasets
         if 'pdb_id' in self.return_data:
@@ -106,33 +113,52 @@ class TesselateDataset(Dataset):
             
         if 'model' in self.return_data:
             return_dict['model'] = model
+            
+        if 'atom_nodes' in self.return_data:
+            ele_nums = [pt.elements.symbol(element).number for element in data['atom_nodes']['element']]
+            return_dict['atom_nodes'] = torch.LongTensor(ele_nums)
         
         if 'atom_adj' in self.return_data:
-            atom_adj = du.create_adj_mat(data['atom_edges'], atom2idx_dict, mat_type='atom_graph')
+            atom_adj = create_adj_mat(data['atom_edges'], atom2idx_dict, mat_type='atom_graph').T
+            atom_adj = torch.sparse.FloatTensor(torch.LongTensor(atom_adj[:2, :]),
+                                                torch.LongTensor(atom_adj[2, :]),
+                                                torch.Size([n_atoms, n_atoms]))
             return_dict['atom_adj'] = atom_adj
             
         if 'atom_contact' in self.return_data:
-            atom_contact = du.create_adj_mat(data['atom_contact'], atom2idx_dict, mat_type='atom_contact')
+            atom_contact = create_adj_mat(data['atom_contact'], atom2idx_dict, mat_type='atom_contact').T
+            atom_contact = torch.sparse.FloatTensor(torch.LongTensor(atom_contact),
+                                                    torch.ones(len(atom_contact.T)),
+                                                    torch.Size([n_atoms, n_atoms, 8]))
             return_dict['atom_contact'] = atom_contact
             
         if 'atom_mask' in self.return_data:
-            atom_mask = du.create_idx_list(data['atom_mask'], atom2idx_dict)
+            atom_mask = create_idx_list(data['atom_mask'], atom2idx_dict)
             return_dict['atom_mask'] = atom_mask
             
         if 'res_adj' in self.return_data:
-            res_adj = du.create_adj_mat(data['res_edges'], res2idx_dict, mat_type='res_graph')
+            res_adj = create_adj_mat(data['res_edges'], res2idx_dict, mat_type='res_graph').T
+            res_adj = torch.sparse.FloatTensor(torch.LongTensor(res_adj),
+                                                torch.ones(len(res_adj.T)),
+                                                torch.Size([n_res, n_res]))
             return_dict['res_adj'] = res_adj
             
         if 'res_contact' in self.return_data:
-            res_contact = du.create_adj_mat(data['res_contact'], res2idx_dict, mat_type='res_contact')
+            res_contact = create_adj_mat(data['res_contact'], res2idx_dict, mat_type='res_contact').T
+            res_contact = torch.sparse.FloatTensor(torch.LongTensor(res_contact),
+                                                    torch.ones(len(res_contact.T)),
+                                                    torch.Size([n_res, n_res, 8]))
             return_dict['res_contact'] = res_contact
             
         if 'res_mask' in self.return_data:
-            res_mask = du.create_idx_list(data['res_mask'], res2idx_dict)
+            res_mask = create_idx_list(data['res_mask'], res2idx_dict)
             return_dict['res_mask'] = res_mask
             
         if 'mem_mat' in self.return_data:
-            mem_mat = du.create_mem_mat(atom2idx_dict, res2idx_dict)
+            mem_mat = create_mem_mat(atom2idx_dict, res2idx_dict).T
+            mem_mat = torch.sparse.FloatTensor(torch.LongTensor(mem_mat),
+                                               torch.ones(len(mem_mat.T)),
+                                               torch.Size([n_res, n_atoms]))
             return_dict['mem_mat'] = mem_mat
             
         if 'idx2atom_dict' in self.return_data:
