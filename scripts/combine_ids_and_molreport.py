@@ -349,8 +349,8 @@ if __name__ == '__main__':
 
     out_atoms, out_bonds, masked_atoms = fill_gaps(seq_atoms, seq_bonds, struct_atoms, struct_bonds)
     
-    out_atoms = out_atoms.sort_values(['chain', 'num'],
-                                      ascending=[True, True]).drop(columns=['charge']).drop_duplicates()
+    out_atoms = out_atoms.sort_values(['chain', 'num'], ascending=[True, True])
+    out_atoms = out_atoms[['atom', 'element']].drop_duplicates()
     
     out_atoms.to_csv(nodes_out, index=False, columns=['atom', 'element'])
     out_bonds.to_csv(edges_out, index=False, columns=['start', 'end', 'order'])
