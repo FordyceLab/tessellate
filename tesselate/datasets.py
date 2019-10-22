@@ -30,7 +30,7 @@ class TesselateDataset(Dataset):
             - idx2res_dict    
     """
     
-    def __init__(self, accession_list, graph_dir, contacts_dir, return_data='all'):
+    def __init__(self, accession_list, graph_dir, contacts_dir, add_covalent=False, return_data='all'):
         
         if return_data == 'all':
             self.return_data = [
@@ -54,6 +54,10 @@ class TesselateDataset(Dataset):
         # Store references to the necessary directories
         self.graph_dir = graph_dir
         self.contacts_dir = contacts_dir
+        
+        # Whether to add covalent bonds to prediction task and
+        # remove sequence non-deterministic covalent bonds from the adjacency matrix
+        self.add_covalent=add_covalent
         
         # Read in and store a list of accession IDs
         with open(accession_list, 'r') as handle:
@@ -119,46 +123,99 @@ class TesselateDataset(Dataset):
             return_dict['atom_nodes'] = torch.LongTensor(ele_nums)
         
         if 'atom_adj' in self.return_data:
-            atom_adj = create_adj_mat(data['atom_edges'], atom2idx_dict, mat_type='atom_graph').T
-            atom_adj = torch.sparse.FloatTensor(torch.LongTensor(atom_adj[:2, :]),
-                                                torch.LongTensor(atom_adj[2, :]),
-                                                torch.Size([n_atoms, n_atoms]))
+            adj = create_adj_mat(data['atom_edges'], atom2idx_dict, mat_type='atom_graph').T
+            
+            x = torch.LongTensor(adj[0, :]).squeeze()
+            y = torch.LongTensor(adj[1, :]).squeeze()
+            val = torch.FloatTensor(adj[2, :]).squeeze()
+            
+            atom_adj = torch.zeros([n_atoms, n_atoms]).index_put_((x, y), val, accumulate=False)
+            
+            atom_adj = atom_adj.index_put_((y, x), val, accumulate=False)
+            
+            atom_adj[range(n_atoms), range(n_atoms)] = 1
+            
             return_dict['atom_adj'] = atom_adj
             
         if 'atom_contact' in self.return_data:
             atom_contact = create_adj_mat(data['atom_contact'], atom2idx_dict, mat_type='atom_contact').T
-            atom_contact = torch.sparse.FloatTensor(torch.LongTensor(atom_contact),
-                                                    torch.ones(len(atom_contact.T)),
-                                                    torch.Size([n_atoms, n_atoms, 8]))
+            
+            x = torch.LongTensor(atom_contact[0, :]).squeeze()
+            y = torch.LongTensor(atom_contact[1, :]).squeeze()
+            z = torch.LongTensor(atom_contact[2, :]).squeeze()
+
+            atom_contact = torch.zeros([n_atoms, n_atoms, 8]).index_put_((x, y, z),
+                                                                    torch.ones(len(x)))
+            
             return_dict['atom_contact'] = atom_contact
             
         if 'atom_mask' in self.return_data:
             atom_mask = create_idx_list(data['atom_mask'], atom2idx_dict)
-            return_dict['atom_mask'] = atom_mask
             
-        if 'res_adj' in self.return_data:
-            res_adj = create_adj_mat(data['res_edges'], res2idx_dict, mat_type='res_graph').T
-            res_adj = torch.sparse.FloatTensor(torch.LongTensor(res_adj),
-                                                torch.ones(len(res_adj.T)),
-                                                torch.Size([n_res, n_res]))
+            masked_pos = torch.from_numpy(atom_mask)
+            
+            if self.add_covalent:
+                channels = 9
+            else:
+                channels = 8
+            
+            mask = torch.ones([n_atoms, n_atoms, channels])
+            mask[masked_pos, :, :] = 0
+            mask[:, masked_pos, :] = 0
+            
+            return_dict['atom_mask'] = mask
+            
+        if 'res_adj' in self.return_data:            
+            adj = create_adj_mat(data['res_edges'], res2idx_dict, mat_type='res_graph').T
+            
+            x = torch.LongTensor(adj[0, :]).squeeze()
+            y = torch.LongTensor(adj[1, :]).squeeze()
+            
+            res_adj = torch.zeros([n_res, n_res]).index_put_((x, y), torch.ones(len(x)))
+            
+            res_adj = res_adj.index_put_((y, x), torch.ones(len(x)))
+            
+            res_adj[range(n_res), range(n_res)] = 1
+            
             return_dict['res_adj'] = res_adj
             
         if 'res_contact' in self.return_data:
             res_contact = create_adj_mat(data['res_contact'], res2idx_dict, mat_type='res_contact').T
-            res_contact = torch.sparse.FloatTensor(torch.LongTensor(res_contact),
-                                                    torch.ones(len(res_contact.T)),
-                                                    torch.Size([n_res, n_res, 8]))
+            
+            x = torch.LongTensor(res_contact[0, :]).squeeze()
+            y = torch.LongTensor(res_contact[1, :]).squeeze()
+            z = torch.LongTensor(res_contact[2, :]).squeeze()
+
+            res_contact = torch.zeros([n_res, n_res, 8]).index_put_((x, y, z),
+                                                                    torch.ones(len(x)))
+            
             return_dict['res_contact'] = res_contact
             
         if 'res_mask' in self.return_data:
             res_mask = create_idx_list(data['res_mask'], res2idx_dict)
-            return_dict['res_mask'] = res_mask
+            
+            masked_pos = torch.from_numpy(res_mask)
+            
+            if self.add_covalent:
+                channels = 9
+            else:
+                channels = 8
+            
+            mask = torch.ones([n_res, n_res, channels])
+            mask[masked_pos, :, :] = 0
+            mask[:, masked_pos, :] = 0
+            
+            return_dict['res_mask'] = mask
             
         if 'mem_mat' in self.return_data:
             mem_mat = create_mem_mat(atom2idx_dict, res2idx_dict).T
-            mem_mat = torch.sparse.FloatTensor(torch.LongTensor(mem_mat),
-                                               torch.ones(len(mem_mat.T)),
-                                               torch.Size([n_res, n_atoms]))
+            
+            x = torch.LongTensor(mem_mat[0, :]).squeeze()
+            y = torch.LongTensor(mem_mat[1, :]).squeeze()
+            
+            mem_mat = torch.zeros([n_res, n_atoms]).index_put_((x, y),
+                                                               torch.ones(len(x)))
+            
             return_dict['mem_mat'] = mem_mat
             
         if 'idx2atom_dict' in self.return_data:
