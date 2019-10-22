@@ -8,6 +8,7 @@ from .modules.modules import GraphAttn
 from .modules.modules import FCContactPred
 
 from .functions.functions import pairwise_mat
+from .functions.functions import triu_condense
 
 
 class VanillaGAT(pl.LightningModule):
@@ -34,14 +35,14 @@ class VanillaGAT(pl.LightningModule):
         self.embed = AtomEmbed(embed_features, scale_grad_by_freq=True)
         self.atom_attn = GraphAttn(embed_features, atom_out_features, dropout, alpha)
         self.res_attn = GraphAttn(atom_out_features, res_out_features, dropout, alpha)
-        self.pred_contact = FCContactPred(res_out_features, out_features)
+        self.pred_contact = FCContactPred(res_out_features, n_contact_channels)
 
     def forward(self, x):
-        atom_embed = self.embedding(x['atom_nodes'])
-        atom_attn = self.atom_attn(atom_embed, x['atom_adj'])
-        res_embed = x['mem_mat'].matmul(atom_attn)
-        res_attn = self.res_attn(res_embed)
-        pairwise = pairwise_mat(nodes, method='mean')
+        atom_embed = self.embed(x['atom_nodes'].squeeze())
+        atom_attn = self.atom_attn(atom_embed, x['atom_adj'].squeeze())
+        res_embed = x['mem_mat'].squeeze().matmul(atom_attn)
+        res_attn = self.res_attn(res_embed, x['res_adj'].squeeze())
+        pairwise = pairwise_mat(res_attn, method='mean')
         combined = pairwise.matmul(res_attn)
         preds = self.pred_contact(combined)
         
@@ -50,39 +51,42 @@ class VanillaGAT(pl.LightningModule):
     def training_step(self, batch, batch_nb):
         # REQUIRED
         y_hat = self.forward(batch)
-        return {'loss': F.cross_entropy(y_hat, batch['res_contact'])}
+        y = triu_condense(batch['res_contact'].squeeze())
+        weights = triu_condense(batch['res_mask'].squeeze())
+        
+        return {'loss': F.binary_cross_entropy(y_hat, y, weight=weights)}
 
-    def validation_step(self, batch, batch_nb):
-        # OPTIONAL
-#         x, y = batch
-#         y_hat = self.forward(x)
-#         return {'val_loss': F.cross_entropy(y_hat, y)}
-        pass
+#     def validation_step(self, batch, batch_nb):
+#         # OPTIONAL
+# #         x, y = batch
+# #         y_hat = self.forward(x)
+# #         return {'val_loss': F.cross_entropy(y_hat, y)}
+#         pass
 
-    def validation_end(self, outputs):
-        # OPTIONAL
-#         avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-#         return {'avg_val_loss': avg_loss}
-        pass
+#     def validation_end(self, outputs):
+#         # OPTIONAL
+# #         avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+# #         return {'avg_val_loss': avg_loss}
+#         pass
 
     def configure_optimizers(self):
         # REQUIRED
         # can return multiple optimizers and learning_rate schedulers
-        return torch.optim.Adam(self.parameters(), lr=0.02)
+        return torch.optim.Adam(self.parameters(), lr=0.2)
 
     @pl.data_loader
     def tng_dataloader(self):
         # REQUIRED
-        return DataLoader(train_data, shuffle=True, num_workers=10, pin_memory=True)
+        return DataLoader(self.train_data, shuffle=True, num_workers=10, pin_memory=True)
 
-    @pl.data_loader
-    def val_dataloader(self):
-        # OPTIONAL
-#         return DataLoader(), batch_size=32)
-        pass
+#     @pl.data_loader
+#     def val_dataloader(self):
+#         # OPTIONAL
+# #         return DataLoader(), batch_size=32)
+#         pass
 
-    @pl.data_loader
-    def test_dataloader(self):
-        # OPTIONAL
-#         return DataLoader(MNIST(os.getcwd(), train=True, download=True, transform=transforms.ToTensor()), batch_size=32)
-        pass
+#     @pl.data_loader
+#     def test_dataloader(self):
+#         # OPTIONAL
+# #         return DataLoader(MNIST(os.getcwd(), train=True, download=True, transform=transforms.ToTensor()), batch_size=32)
+#         pass

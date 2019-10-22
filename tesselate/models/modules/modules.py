@@ -16,9 +16,9 @@ class AtomEmbed(nn.Module):
     """
     
     def __init__(self, num_features, scale_grad_by_freq=True):
-        super().__init__()
+        super(AtomEmbed, self).__init__()
         self.embedding = nn.Embedding(118,
-                                      embedding_size,
+                                      num_features,
                                       scale_grad_by_freq=scale_grad_by_freq)
         
     def forward(self, atomic_numbers):
@@ -33,7 +33,7 @@ class AtomEmbed(nn.Module):
             the embedding vectors.
         """
         
-        embedded_atoms = self.embedding(atoms)
+        embedded_atoms = self.embedding(atomic_numbers)
         return embedded_atoms
     
     
@@ -50,6 +50,7 @@ class GraphAttn(nn.Module):
     """
     
     def __init__(self, in_features, out_features, dropout, alpha):
+        super(GraphAttn, self).__init__()
         
         # Parameters
         self.in_features = in_features
@@ -72,7 +73,7 @@ class GraphAttn(nn.Module):
         """
         
         # Node mat input shape = (num_nodes, out_features)
-        node_fts = self.linear1(node)
+        node_fts = self.W(nodes)
         
         # Number of nodes in graph
         n_nodes = node_fts.size()[0]
@@ -89,11 +90,12 @@ class GraphAttn(nn.Module):
         
         # Create the mask based on adjacency matrix
         # Clip at 0.5
-        mask = torch.where(adj > 0.5, 1, -9e15)
+        mask = torch.where(adj > 0.5, torch.ones(1), torch.FloatTensor([-9e15]))
         
         # Get the attention coefficiencts
         # (n_nodes, n_nodes)
         attention = F.softmax(e * mask, dim=1)
+        attention = attention * adj
         attention = F.dropout(attention, self.dropout, training=self.training)
         
         # Get the output
@@ -112,6 +114,7 @@ class FCContactPred(nn.Module):
     """
     
     def __init__(self, in_features, out_features):
+        super(FCContactPred, self).__init__()
         
         self.linear = nn.Linear(in_features, out_features, bias=True)
     
@@ -129,7 +132,7 @@ class FCContactPred(nn.Module):
         logits = self.linear(combined_nodes)
         
         # Apply sigmoid transform
-        preds = F.sigmoid(logits)
+        preds = torch.sigmoid(logits)
         
         return preds
 
