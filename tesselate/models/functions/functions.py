@@ -91,3 +91,46 @@ def triu_expand(input_matrix):
     output = output.index_put_((row_idx, col_idx), input_matrix)
     
     return output
+
+
+def summarize_res_tensor(tensor, _count=True, _mean=True, _sum=True,
+                         _max=True, _min=True, _std=True):
+    
+    stats = []
+    
+    if _count:
+        stats.append(torch.tensor([[len(tensor)]], dtype=torch.float))
+        
+    if _mean:
+        stats.append(tensor.mean(dim=0, keepdim=True))
+        
+    if _sum:
+        stats.append(tensor.sum(dim=0, keepdim=True))
+        
+    if _max:
+        stats.append(tensor.max(dim=0, keepdim=True)[0])
+        
+    if _min:
+        stats.append(tensor.min(dim=0, keepdim=True)[0])
+        
+    if _std:
+        stats.append(tensor.std(dim=0, keepdim=True))
+        
+    return torch.cat(stats, dim=1)
+
+
+def condense_res_tensors(embeddings, mem_mat, _count=True, _mean=True,
+                         _sum=True, _max=True, _min=True, _std=True):
+
+    res_tensors = []
+    
+    for i in mem_mat.bool():
+        res_tensor = summarize_res_tensor(embeddings[i], _count,
+                                          _mean, _sum, _max, _min, _std)
+        
+        res_tensors.append(res_tensor)
+    
+    return torch.cat(res_tensors, dim=0)
+
+
+

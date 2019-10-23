@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
+# from .functions import condense_res_tensors
 
 
 class AtomEmbed(nn.Module):
@@ -117,7 +118,8 @@ class FCContactPred(nn.Module):
     def __init__(self, in_features, out_features):
         super(FCContactPred, self).__init__()
         
-        self.linear = nn.Linear(in_features, out_features, bias=True)
+        self.linear1 = nn.Linear(in_features, 25, bias=True)
+        self.linear2 = nn.Linear(25, out_features, bias=True)
     
     def forward(self, combined_nodes):
         """
@@ -130,13 +132,26 @@ class FCContactPred(nn.Module):
             upper triangle of interaction matrix.
         """
         # Get the logits from the linear layer
-        logits = self.linear(combined_nodes)
+        prelogits = self.linear1(combined_nodes)
+        prelogits = F.leaky_relu(prelogits)
+        logits = self.linear2(prelogits)
         
         # Apply sigmoid transform
         preds = torch.sigmoid(logits)
         
         return preds
+    
+# class Condense(nn.Module):
+#     def __init__(self, _count=True, _mean=True, _sum=True,
+#                  _max=True, _min=True, _std=True):
+#         super(Condense, self).__init__()
+        
+        
+#     def forward(embeddings, mem_mat):
+#         out = condense_res_tensors(embeddings, mem_mat, _count=_count, _mean=_mean,
+#                                    _sum=_sum, _max=_max, _min=_min, _std=_std)
 
+        
     
 class GGNUnit(nn.Module):
     def __init__(self, input_size):
