@@ -90,11 +90,12 @@ class GraphAttn(nn.Module):
         
         # Create the mask based on adjacency matrix
         # Clip at 0.5
-        mask = torch.where(adj > 0.5, torch.ones(1), torch.FloatTensor([-9e15]))
+        mask = adj < 0.5
+        e[mask] = float('-inf')
         
         # Get the attention coefficiencts
         # (n_nodes, n_nodes)
-        attention = F.softmax(e * mask, dim=1)
+        attention = F.softmax(e, dim=1)
         attention = attention * adj
         attention = F.dropout(attention, self.dropout, training=self.training)
         
