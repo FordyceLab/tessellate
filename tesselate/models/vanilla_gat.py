@@ -54,6 +54,8 @@ class VanillaGAT(pl.LightningModule):
         y = triu_condense(batch['res_contact'].squeeze())
         weights = triu_condense(batch['res_mask'].squeeze())
         
+        print(torch.std(y_hat))
+        
         return {'loss': F.binary_cross_entropy(y_hat, y, weight=weights)}
 
 #     def validation_step(self, batch, batch_nb):
@@ -72,10 +74,10 @@ class VanillaGAT(pl.LightningModule):
     def configure_optimizers(self):
         # REQUIRED
         # can return multiple optimizers and learning_rate schedulers
-        return torch.optim.Adam(self.parameters(), lr=0.2)
+        return torch.optim.SGD(self.parameters(), lr=0.01, momentum=0.9)
 
     @pl.data_loader
-    def tng_dataloader(self):
+    def train_dataloader(self):
         # REQUIRED
         return DataLoader(self.train_data, shuffle=True, num_workers=10, pin_memory=True)
 
