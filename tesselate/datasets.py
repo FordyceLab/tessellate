@@ -135,6 +135,8 @@ class TesselateDataset(Dataset):
             
             atom_adj[range(n_atoms), range(n_atoms)] = 1
             
+            atom_adj = (atom_adj > 0).float()
+            
             return_dict['atom_adj'] = atom_adj
             
         if 'atom_contact' in self.return_data:
@@ -146,6 +148,8 @@ class TesselateDataset(Dataset):
 
             atom_contact = torch.zeros([n_atoms, n_atoms, 8]).index_put_((x, y, z),
                                                                     torch.ones(len(x)))
+            atom_contact = atom_contact.index_put_((y, x, z), 
+                                                   torch.ones(len(x)))
             
             return_dict['atom_contact'] = atom_contact
             
@@ -188,6 +192,9 @@ class TesselateDataset(Dataset):
 
             res_contact = torch.zeros([n_res, n_res, 8]).index_put_((x, y, z),
                                                                     torch.ones(len(x)))
+            
+            res_contact = res_contact.index_put_((y, x, z),
+                                                 torch.ones(len(x)))
             
             return_dict['res_contact'] = res_contact
             
