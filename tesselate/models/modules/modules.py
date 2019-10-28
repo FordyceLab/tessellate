@@ -3,8 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
-# from .functions import condense_res_tensors
 
+
+####################
+# Embedding layers #
+####################
 
 class AtomEmbed(nn.Module):
     """
@@ -16,10 +19,10 @@ class AtomEmbed(nn.Module):
         frequency (default=True).
     """
     
-    def __init__(self, num_features, scale_grad_by_freq=True):
+    def __init__(self, n_features, scale_grad_by_freq=True):
         super(AtomEmbed, self).__init__()
         self.embedding = nn.Embedding(118,
-                                      num_features,
+                                      n_features,
                                       scale_grad_by_freq=scale_grad_by_freq)
         
     def forward(self, atomic_numbers):
@@ -27,27 +30,31 @@ class AtomEmbed(nn.Module):
         Return the embeddings for each atom in the graph.
         
         Args:
-        - atoms (torch.LongTensor) - Tensor containing atomic numbers.
+        - atoms (torch.LongTensor) - Tensor (n_atoms) containing atomic numbers.
         
         Returns:
-        - torch.FloatTensor of dimension (num_atoms, embed_size) containing
+        - torch.FloatTensor of dimension (n_atoms, n_features) containing
             the embedding vectors.
         """
         
+        # Get and return the embeddings for each atom
         embedded_atoms = self.embedding(atomic_numbers)
         return embedded_atoms
-    
-    
+
+
+####################
+# Attention layers #
+####################
+
 class GraphAttn(nn.Module):
     """
     Graph attention layer.
     
     Args:
-    - in_features (int) - 
-    - out_features (int) - 
-    - dropout (bool) - 
-    - alpha (float) - 
-    - concat_out (bool) - 
+    - in_features (int) - Number of input features.
+    - out_features (int) - Number of output features.
+    - dropout (bool) - P(keep) for dropout.
+    - alpha (float) - Alpha value for leaky ReLU.
     """
     
     def __init__(self, in_features, out_features, dropout, alpha):
@@ -69,11 +76,17 @@ class GraphAttn(nn.Module):
         Perform forward pass through graph attention layer.
         
         Args:
-        - nodes (torch.FloatTensor) - Node feature matrix (n_nodes, in_features).
+        - nodes (torch.FloatTensor) - Node feature matrix 
+            (n_nodes, in_features).
         - adj (torch.FloatTensor) - Adjacency matrix (n_nodes, n_nodes).
+        
+        Returns:
+        - torch.FloatTensor of dimension (n_nodes, n_nodes) of attentional
+            coefficients where a_ij is the attention value of for node j with
+            respect to node i.
         """
         
-        # Node mat input shape = (num_nodes, out_features)
+        # Node mat input shape = (n_nodes, out_features)
         node_fts = self.W(nodes)
         
         # Number of nodes in graph
@@ -81,7 +94,8 @@ class GraphAttn(nn.Module):
         
         # Concatenate to generate input for attention mechanism
         # (n_nodes, n_nodes, 2*out_features)
-        a_input = (torch.cat([node_fts.repeat(1, n_nodes).view(n_nodes * n_nodes, -1),
+        a_input = (torch.cat([node_fts.repeat(1, n_nodes).view(n_nodes *
+                                                               n_nodes, -1),
                               node_fts.repeat(n_nodes, 1)], dim=1)
                    .view(n_nodes, n_nodes, 2 * self.out_features))
         
@@ -97,39 +111,42 @@ class GraphAttn(nn.Module):
         # Get the attention coefficiencts
         # (n_nodes, n_nodes)
         attention = F.softmax(e, dim=1)
-        attention = attention * adj
         attention = F.dropout(attention, self.dropout, training=self.training)
         
-        # Get the output
-        # (n_nodes, out_features)
-        output = self.activation(torch.matmul(attention, node_fts))
-        
-        return output
-    
+        return attention
+
+
+#####################
+# Prediction layers #
+#####################
     
 class FCContactPred(nn.Module):
     """
     Fully connected layer to perform contact prediction.
     
     Args:
-    - in_features (int) - Number of input features.
+    - node_features (int) - Number of input features.
+    - out_features (int) - Number of output prediction values.
     """
     
-    def __init__(self, in_features, out_features):
+    def __init__(self, node_features, out_preds):
         super(FCContactPred, self).__init__()
         
-        self.linear1 = nn.Linear(in_features, 25, bias=True)
-        self.linear2 = nn.Linear(25, out_features, bias=True)
+        self.linear1 = nn.Linear(node_features, 25, bias=True)
+        self.linear2 = nn.Linear(25, out_preds, bias=True)
     
     def forward(self, combined_nodes):
         """
-        Predict pointwise multichannel contacts
+        Predict pointwise multichannel contacts from summarized pairwise
+        residue features.
         
         Args:
         - nodes (torch.FloatTensor) - Tensor of (convolved) node features
-            (n_nodes, n_features).
-        - combine (callable) - Function to combine nodes according to
-            upper triangle of interaction matrix.
+            (n_pairwise, n_features).
+
+        Returns:
+        - torch.FloatTensor (n_contacts, n_channels) containing the prediction
+            for every potential contact point and every contact channel.
         """
         # Get the logits from the linear layer
         prelogits = self.linear1(combined_nodes)
@@ -141,102 +158,55 @@ class FCContactPred(nn.Module):
         
         return preds
     
-# class Condense(nn.Module):
-#     def __init__(self, _count=True, _mean=True, _sum=True,
-#                  _max=True, _min=True, _std=True):
-#         super(Condense, self).__init__()
-        
-        
-#     def forward(embeddings, mem_mat):
-#         out = condense_res_tensors(embeddings, mem_mat, _count=_count, _mean=_mean,
-#                                    _sum=_sum, _max=_max, _min=_min, _std=_std)
-
-        
     
-class GGNUnit(nn.Module):
-    def __init__(self, input_size):
-        super(GGNUnit, self).__init__()
-        self.gru = nn.GRUCell(input_size, input_size)
-        
-    def forward(self, x_in, h_prev):
-        h_t = self.gru(x_in, h_prev)
-        
-        return h_t
-
-
-class FFN(nn.Module):
-    def __init__(self, input_size):
-        super().__init__()
-
-        self.linear1 = nn.Linear(input_size, 12)
-        self.linear2 = nn.Linear(12, 12)
-        
-    def forward(self, input_vec):
-        x = self.linear1(input_vec)
-        x = F.relu(x)
-        x = self.linear2(x)
-        out = torch.sigmoid(x)
-        
-        return(out)
-        
-        
+class OrderInvContPred(nn.Module):
+    """
+    Order invariant contact prediction module.
     
-class Network(nn.Module):
-    def __init__(self, input_size, n_atom_conv, n_res_conv, device0, device1):
-        super().__init__()
+    Args:
+    - node_features (int) - Number of embedding features.
+    - out_preds (int) - Number of output predictions (n_channels).
+    """
+    
+    def __init__(self, node_features, out_preds):
+        super(Condense, self).__init__()
         
-        self.device0 = device0
-        self.device1 = device1
+        self.W1 = nn.Parameter(torch.randn((node_features*2, node_features*2),
+                                           requires_grad=True))
         
-        self.input_size = input_size
+        self.W2 = nn.Parameter(torch.randn((node_features*2, out_preds),
+                                           requires_grad=True))
         
-        self.embedding = nn.Embedding(116,
-                                      input_size,
-                                      scale_grad_by_freq=True)
+    def forward(self, concatenated_nodes):
+        """
+        Predict pointwise multichannel contacts from summarized pairwise
+        residue features.
         
-#         embeddings = torch.randn(116, input_size)
+        Args:
+        - concatenated_nodes (torch.FloatTensor) - Tensor of (convolved) node
+            features (n_contacts, n_features * 2). All of the fully convolved
+            features should be reversed along dim 1 for the second residue and
+            then concatenated. This functionality can be obtained from the
+            `cat_pairwise` function in the tesselate.models.functions module.
+
+        Returns:
+        - torch.FloatTensor (n_contacts, n_channels) containing the prediction
+            for every potential contact point and every contact channel.
+        """
         
-#         for i in range(len(embeddings)):
-#             embeddings[i, 0] = i + 1
+        # Perform pointwise averaging to get
+        W1_symm = self.W1 + self.W1.T
+        W1_prime = (W1_symm + torch.rot90(self.W1, 2, (0, 1))) / 3
+        W2_prime = (self.W2 + torch.flip(self.W2, dims=(0,))) / 2
         
-#         self.embedding = nn.Embedding.from_pretrained(embeddings,
-#                                                       freeze=False,
-#                                                       scale_grad_by_freq=True)
+        n_row = concatenated_nodes.shape[0]
+        input_tens = concatenated_nodes.view((n_row, 1, -1))
         
-        self.n_atom_conv = n_atom_conv
-        self.n_res_conv = n_res_conv
+        int_feats = concatenated_nodes.matmul(W1_prime)
+        int_feats = F.relu(int_feats)
         
-        self.atom_linear = nn.ModuleList([nn.Linear(input_size * (layer + 1), input_size, bias=False).to(device0) for layer in range(self.n_atom_conv)])
-        self.res_linear = nn.ModuleList([nn.Linear(input_size * (layer + 1), input_size, bias=False).to(device0) for layer in range(self.n_res_conv)])
+        logits = int_feats.matmul(W2_prime)
         
-#         self.atom_ggn = GGNUnit(input_size).to(device0)
-#         self.res_ggn = GGNUnit(input_size).to(device0)
+        preds = torch.sigmoid(logits).squeeze()
         
-        self.ffn = FFN(input_size).to(device0)
-        
-        
-    def forward(self, atom_adjacency, res_adjacency, atoms, membership, combos):
-        
-        x_in = self.embedding(atoms).to(self.device0)
-        x_out = x_in
-        
-        for i in range(self.n_atom_conv):
-            x_out = F.relu(self.atom_linear[i](atom_adjacency.mm(x_in)))
-            x_in = torch.cat([x_out, x_in], 1)
-            
-        x_in = torch.mm(membership, x_out)
-        
-        for i in range(self.n_res_conv):
-            x_out = F.relu(self.res_linear[i](res_adjacency.mm(x_in)))
-            x_in = torch.cat([x_out, x_in], 1)
-            
-#             x_in = x_out
-#             x_out = self.res_ggn(x_in_prop, x_in)
-            
-#         x_in = x_in.to(self.device0)
-        
-        mean_combos = torch.mm(combos, x_out)
-        
-        out = self.ffn(mean_combos)
-        
-        return out
+        return preds
