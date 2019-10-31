@@ -26,3 +26,6 @@ Untitled*
 # Ignore test files
 *test*.txt
 
+# Ignore tmp directories
+*tmp/
+
