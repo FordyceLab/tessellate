@@ -46,7 +46,8 @@ def calc_metric_curve(preds, target, curve_type, squareform=False):
         
         # Handle case of squareform
         if squareform:
-            var1, var2, _ = curve_func(target[:, :, i][indices], preds[:, :, i][indices])
+            var1, var2, _ = curve_func(target[:, :, i][indices],
+                                       preds[:, :, i][indices])
             
         # Handle case of pairwise
         else:
@@ -92,13 +93,13 @@ def plot_curve_metric(x, y, auc, curve_type, title=None, labels=None):
     # Get the number of channels being plotted
     n_chan = len(x)
     
-    # Check to make sure the labels are the right length
-    if len(labels) != n_chan:
-        raise ValueError('Number of labels ({}) does not match number of prediction channels ({}).'.format(len(labels), n_chan))
-    
     # Make labels numeric if not provided
     if labels is None:
         labels = list(range(n_chan))
+    
+    # Check to make sure the labels are the right length
+    if len(labels) != n_chan:
+        raise ValueError('Number of labels ({}) does not match number of prediction channels ({}).'.format(len(labels), n_chan))
     
     # Get a lit of colors for all the channels
     color_list = plt.cm.Set1(np.linspace(0, 1, n_chan))
@@ -136,8 +137,22 @@ def plot_curve_metric(x, y, auc, curve_type, title=None, labels=None):
 
 def plot_curve(preds, target, curve_type, title=None, labels=None,
                squareform=False):
+    """
+    Wrapper to directly plot curves from model output and target.
     
-    calc_metric_curve(preds, target, curve_type, squareform=False)
+    Args:
+    - preds (np array-like) - Array or tensor of predicted values output by
+        model.
+    - target (np array-like) - Array or tensor of target values.
+    - curve_type (str) - One of 'ROC' or 'PRC'.
+    - title (str) - Title of plot (default = None).
+    - labels (list) - List of labels for each channel on the plot
+        (default = None).
+    - squareform (bool) - Whether the predictions and targets are in square form
+        (default = False).
+    """
+    x, y, auc_ = calc_metric_curve(preds, target, curve_type, squareform)
+    return plot_curve_metric(x, y, auc_, curve_type, title, labels)
 
 ##################################
 # Intermediate outputs/gradients #
