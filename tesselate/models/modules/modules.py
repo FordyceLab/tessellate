@@ -169,7 +169,7 @@ class OrderInvContPred(nn.Module):
     """
     
     def __init__(self, node_features, out_preds):
-        super(Condense, self).__init__()
+        super(OrderInvContPred, self).__init__()
         
         self.W1 = nn.Parameter(torch.randn((node_features*2, node_features*2),
                                            requires_grad=True))
@@ -207,6 +207,6 @@ class OrderInvContPred(nn.Module):
         
         logits = int_feats.matmul(W2_prime)
         
-        preds = torch.sigmoid(logits).squeeze()
+        preds = logits.squeeze()
         
         return preds
