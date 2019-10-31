@@ -132,7 +132,7 @@ def create_adj_mat(data, dict_map, mat_type):
     Creates an adjacency matrix.
     
     Args:
-    - data (DatFrame) - Dataframe with 'start' and 'end' column
+    - data (DataFrame) - Dataframe with 'start' and 'end' column
         for each interaction. For atom-level adjacency, 'order' 
         column is also required. For atom or residue conatcts,
         'type' column is also required.
