@@ -1,1 +1,1 @@
-from viz import plot_curve
+from .viz import plot_curve
