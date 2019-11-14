@@ -3,7 +3,7 @@ import torch
 
 
 ########################################
-# Pairwise matric generation functions #
+# Pairwise matrix generation functions #
 ########################################
 
 def pairwise_mat(nodes, method='mean'):
@@ -35,6 +35,14 @@ def pairwise_mat(nodes, method='mean'):
         combos *= 0.5
         
     return combos
+
+
+def pairwise_3d(nodes):
+    # Get the upper triangle indices
+    repeated_nodes = nodes.unsqueeze(0).expand(nodes.shape[0], -1, -1)
+    repeated_nodes2 = repeated_nodes.permute(1, 0, 2)
+    
+    return torch.cat((repeated_nodes, repeated_nodes2), dim=-1)
 
 
 ############################
@@ -219,3 +227,48 @@ def cat_pairwise(embeddings):
     node2 = torch.flip(torch.stack(node2, dim=0), dims=(1,))
 
     return torch.cat((node1, node2), dim=1)
+
+
+###################
+# P-GNN functions #
+###################
+
+def generate_dists(adj_mat):
+    adj_mask = adj_mat == 0
+    
+    dist = adj_mat - torch.eye(adj_mat.shape[0])
+    dist = 1 / (dist + 1)
+    dist[adj_mask] = 0
+    
+    return dist.squeeze()
+
+
+def get_dist_max(anchorset_id, dist):
+    dist_max = torch.zeros((dist.shape[0],len(anchorset_id)))
+    dist_argmax = torch.zeros((dist.shape[0],len(anchorset_id))).long()
+    for i in range(len(anchorset_id)):
+        temp_id = anchorset_id[i]
+        dist_temp = dist[:, temp_id]
+        dist_max_temp, dist_argmax_temp = torch.max(dist_temp, dim=-1)
+        dist_max[:,i] = dist_max_temp
+        dist_argmax[:,i] = dist_argmax_temp
+    return dist_max, dist_argmax
+
+
+def get_random_anchorset(n,c=0.5):
+    m = int(np.log2(n))
+    copy = int(c*m)
+    anchorset_id = []
+    for i in range(m):
+        anchor_size = int(n/np.exp2(i + 1))
+        for j in range(copy):
+            anchorset_id.append(np.random.choice(n,size=anchor_size,replace=False))
+    return anchorset_id
+
+
+def preselect_anchor(n_nodes, dists):
+    anchorset_id = get_random_anchorset(n_nodes, c=1)
+    return get_dist_max(anchorset_id, dists)
+
+
+    
