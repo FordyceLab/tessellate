@@ -30,7 +30,7 @@ class TesselateDataset(Dataset):
             - idx2res_dict    
     """
     
-    def __init__(self, accession_list, graph_dir, contacts_dir, add_covalent=False, return_data='all'):
+    def __init__(self, accession_list, graph_dir, contacts_dir, add_covalent=False, return_data='all', in_memory=False):
         
         if return_data == 'all':
             self.return_data = [
@@ -62,6 +62,8 @@ class TesselateDataset(Dataset):
         # Read in and store a list of accession IDs
         with open(accession_list, 'r') as handle:
             self.accessions = np.array([acc.strip().lower().split() for acc in handle.readlines()])
+            
+        self.data = {}
 
             
     def __len__(self):
@@ -84,6 +86,8 @@ class TesselateDataset(Dataset):
         Returns:
         - Dictionary of dataset example. All tensors are sparse when possible.
         """
+        if idx in self.data:
+            return self.data[idx]
         
         # initialize the return dictionary
         return_dict = {}
@@ -230,6 +234,8 @@ class TesselateDataset(Dataset):
             
         if 'idx2res_dict' in self.return_data:
             return_dict['idx2res_dict'] = idx2res_dict
+            
+        self.data[idx] = return_dict
             
         # Return the processed data
         return return_dict
