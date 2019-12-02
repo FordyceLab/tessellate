@@ -5,6 +5,20 @@ import sys
 
 # molreport extraction
 def extract_molreport(filepath, strip_H=False):
+    """
+    Extract relevant information from molreport file type.
+    
+    Args:
+    - filepath (str) - Path to molreport file.
+    - strip_H (bool) - Whether to strip hydrogens from molreport file
+        (default=False).
+    
+    Returns:
+    - Tuple of Pandas dataframes, one for atom information and one for bond
+        information.
+    """
+    
+    # Dict to hold the atom information
     atom_info = {
         'atom': [],
         'element': [],
@@ -13,19 +27,30 @@ def extract_molreport(filepath, strip_H=False):
         'charge': []
     }
     
+    # Dict to hold the bond information
     bond_info = {
         'start': [],
         'end': [],
         'order': []
     }
     
+    # Dict to hold the element identities
     elements = {}
     
+    # Open the molreport file
     with open(filepath) as molreport:
+        
+        # Read the file
         for line in molreport.readlines():
+            
+            # Handle atoms case
             if line.startswith('ATOM'):
+                
+                # Split the line
                 splitline = line.strip().split()
                 
+                # Extract relevant information for each atom, respecting
+                # hydrogen stripping parameters
                 if (splitline[2] != 'H' and strip_H) or not strip_H:
                     atom_info['atom'].append(int(splitline[1]))
                     atom_info['element'].append(splitline[2])
@@ -33,32 +58,48 @@ def extract_molreport(filepath, strip_H=False):
                     atom_info['hyb'].append(int(splitline[6]))
                     atom_info['charge'].append(float(splitline[8]))
                 
+                # Get the element identity
                 elements[int(splitline[1])] = splitline[2]
                 
+            # Handle bonds case
             elif line.startswith('BOND'):
+                
+                # Split the line
                 splitline = line.strip().split()
                 
+                # Get the bond start and end points
                 bond_start = int(splitline[3])
                 bond_end = int(splitline[5])
                 
-                not_H = elements[bond_start] != 'H' and elements[bond_end] != 'H'
+                # Whether bond includes hydrogen
+                not_H = (elements[bond_start] != 'H' and
+                         elements[bond_end] != 'H')
                 
+                # Extract relevant information for each atom, respecting
+                # hydrogen stripping parameters
                 if (not_H and strip_H) or not strip_H:
                 
+                    # Extract bond info, with correct ordering
                     if bond_start < bond_end:
                         bond_info['start'].append(bond_start)
                         bond_info['end'].append(bond_end)
-
                     else:
                         bond_info['start'].append(bond_end)
                         bond_info['end'].append(bond_start)
                 
+                    # Extract bond order (e.g., single, double, etc.)
                     bond_info['order'].append(splitline[7])
-                
+    
+    # Return a data frame of the relevant info
     return (pd.DataFrame(atom_info), pd.DataFrame(bond_info))
 
 
 def extract_ids(filepath):
+    """
+    
+    
+    """
+    
     ids = pd.read_table(filepath, names=['atom', 'identifier', 'element'])
     return ids
 
@@ -67,8 +108,12 @@ def extract_ids(filepath):
 def merge_molreport_ids(molreport_atoms, molreport_bonds, ids):
     
     # Handle atoms file
-    atom_out = pd.merge(molreport_atoms, ids, on=['atom', 'element']).drop('atom',
-                                           axis=1).rename(columns={'identifier': 'atom'})
+    atom_out = (
+        pd.merge(molreport_atoms, ids, on=['atom', 'element'])
+        .drop('atom', axis=1)
+        .rename(columns={'identifier': 'atom'})
+    )
+    
     atom_out = atom_out[['atom', 'element', 'type', 'hyb', 'charge']]
     
     # Handle bonds
@@ -241,7 +286,8 @@ def fill_gaps(seq_atoms, seq_bonds, struct_atoms, struct_bonds):
         
         chain_atoms = struct_atoms[(struct_atoms['chain'] == chain)]
 
-        chain_bonds = struct_bonds[(struct_bonds['start_chain'] == chain) | (struct_bonds['end_chain'] == chain)]
+        chain_bonds = struct_bonds[(struct_bonds['start_chain'] == chain) &
+                                   (struct_bonds['end_chain'] == chain)]
         
         G = nx.from_pandas_edgelist(chain_bonds, source='start', target='end')
 
@@ -269,7 +315,6 @@ def fill_gaps(seq_atoms, seq_bonds, struct_atoms, struct_bonds):
 
 def check_res_connections(bonds):
     disconnects = []
-    
     simple_bonds = bonds[['start_chain', 'start_num', 'end_chain', 'end_num']].drop_duplicates()
     
     chains = sorted(list(set(list(simple_bonds['start_chain'].unique()) +
@@ -285,6 +330,7 @@ def check_res_connections(bonds):
         cxns = [sorted([chain_bonds.iloc[i, 0], chain_bonds.iloc[i, 1]]) for i in range(len(chain_bonds))]
         
         res_nums = list(chain_bonds['start_num']) + list(chain_bonds['end_num'])
+        
         max_num = max(res_nums)
         min_num = min(res_nums)
         
@@ -297,27 +343,36 @@ def check_res_connections(bonds):
 
 if __name__ == '__main__':
     
+    # Get the output file names as the incoming command line arguments
     nodes_out = sys.argv[1]
     edges_out = sys.argv[2]
     mask_out = sys.argv[3]
     
+    # Get the input files as the trailing command line arguments 
     files = sys.argv[4:]
     
+    # Dict to hold splits of filetypes
     filesplits = {
         'struct': {},
         'seq': {}
     }
 
+    # Run through each file and determing the type
     for file in files:
+        
+        # Split the filename on extension
         base, ext = ntpath.basename(file).split('.')
         suffix = base.split('_', 1)[1]
 
+        # Get structure files
         if suffix == 'no_solvent':
             filesplits['struct'][ext] = file
+            
+        # Get sequence files
         else:
             if suffix not in filesplits['seq']:
                 filesplits['seq'][suffix] = {}
-
+                
             filesplits['seq'][suffix][ext] = file
 
     # Handle the sequence
