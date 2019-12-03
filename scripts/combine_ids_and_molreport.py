@@ -102,7 +102,12 @@ def extract_molreport(filepath, strip_h=False):
                     bond_info['order'].append(splitline[7])
 
     # Return a data frame of the relevant info
-    return (pd.DataFrame(atom_info), pd.DataFrame(bond_info))
+    atom_info = pd.DataFrame(atom_info)
+    atom_info['element'] = atom_info['element'].apply(lambda x: x.title())
+
+    bond_info = pd.DataFrame(bond_info)
+
+    return (atom_info, bond_info)
 
 
 def extract_ids(filepath):
@@ -117,12 +122,28 @@ def extract_ids(filepath):
     """
 
     ids = pd.read_table(filepath, names=['atom', 'identifier', 'element'])
+    ids['element'] = ids['element'].apply(lambda x: x.title())
     return ids
 
 
 def merge_molreport_ids(molreport_atoms, molreport_bonds, ids):
-    """
-    Merge molreport with ID information.
+    """Merge molreport with ID information.
+
+    Merges ID information (chain, residues, atom, etc.) with molreport
+    information including bonds.
+
+    Args:
+    - molreport_atoms (pd.DataFrame) - Pandas DataFrame containing all atom
+        information from the molreport.
+    - molreport_bonds (pd.DataFrame) - Pandas DataFrame containing all bond
+        information from the molreport.
+    - ids (pd.DataFrame) - Pandas DataFrame containing indentifying information
+        for each individual atom, to be joined into less descriptive molreport
+        identifiers.
+
+    Returns:
+    - Tuple of Pandas DataFrames (atoms and bonds, respoectively) with merged ID
+        information for each atom.
     """
 
     # Handle atoms file
@@ -258,9 +279,11 @@ def patch_gaps(chain, seq, absent, breakpoints):
     Patch gaps in a chain.
     """
 
+    # Extract information
     chain_atoms, chain_bonds = chain
     seq_atoms, seq_bonds = seq
 
+    # Initialize a list for the missing atoms
     all_missing = []
 
     # Get chain ID
