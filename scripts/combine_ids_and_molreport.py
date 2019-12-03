@@ -121,7 +121,9 @@ def extract_ids(filepath):
     - Pandas DataFrame of the atom name, identifier, and element.
     """
 
-    ids = pd.read_table(filepath, names=['atom', 'identifier', 'element'])
+    ids = pd.read_table(filepath, names=['atom', 'identifier', 'element'],
+                        keep_default_na=False)
+
     ids['element'] = ids['element'].apply(lambda x: x.title())
     return ids
 
@@ -386,31 +388,38 @@ def fill_gaps(seq_atoms, seq_bonds, struct_atoms, struct_bonds):
     for chain in unique_chains:
 
         chain_atoms = struct_atoms[(struct_atoms['chain'] == chain)]
-
         chain_bonds = struct_bonds[(struct_bonds['start_chain'] == chain) &
-                                   (struct_bonds['end_chain'] == chain)]
+                                       (struct_bonds['end_chain'] == chain)]
 
-        graph = nx.from_pandas_edgelist(chain_bonds,
-                                        source='start',
-                                        target='end')
+        res_nums = chain_atoms['num'].unique()
 
-        if nx.is_connected(graph):
-            atoms.append(chain_atoms)
-            bonds.append(chain_bonds)
+        if len(res_nums) > 1:
+
+            graph = nx.from_pandas_edgelist(chain_bonds,
+                                            source='start',
+                                            target='end')
+
+            if nx.is_connected(graph):
+                atoms.append(chain_atoms)
+                bonds.append(chain_bonds)
+
+            else:
+                gaps = identify_gaps(chain_atoms)
+
+                # Add any disconnects not found by residue gap check
+                gaps[2].extend(check_res_connections(chain_bonds))
+
+                cleaned = patch_gaps(chain=(chain_atoms, chain_bonds),
+                                     seq=(seq_atoms, seq_bonds),
+                                     absent=gaps[1], breakpoints=gaps[2])
+
+                atoms.append(cleaned[0])
+                bonds.append(cleaned[1])
+                masked_atoms.extend(cleaned[2])
 
         else:
-            gaps = identify_gaps(chain_atoms)
-
-            # Add any disconnects not found by residue gap check
-            gaps[2].extend(check_res_connections(chain_bonds))
-
-            cleaned = patch_gaps(chain=(chain_atoms, chain_bonds),
-                                 seq=(seq_atoms, seq_bonds),
-                                 absent=gaps[1], breakpoints=gaps[2])
-
-            atoms.append(cleaned[0])
-            bonds.append(cleaned[1])
-            masked_atoms.extend(cleaned[2])
+            atoms.append(chain_atoms)
+            bonds.append(chain_bonds)
 
     atoms = pd.concat(atoms).drop_duplicates()
     bonds = pd.concat(bonds).drop_duplicates()
