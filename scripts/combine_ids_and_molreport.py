@@ -516,10 +516,40 @@ def combine_ids_and_molreport(filesplits):
     struct_bonds = augment_bonds(struct_bonds)
 
     # Fill gaps in the graph
-    out_atoms, out_bonds, masked_atoms = fill_gaps(seq_atoms,
-                                                   seq_bonds,
-                                                   struct_atoms,
-                                                   struct_bonds)
+#     out_atoms, out_bonds, masked_atoms = fill_gaps(seq_atoms,
+#                                                    seq_bonds,
+#                                                    struct_atoms,
+#                                                    struct_bonds)
+
+    out_atoms, out_bonds, masked_atoms = merge_seq_and_struct(seq_atoms,
+                                                              seq_bonds,
+                                                              struct_atoms,
+                                                              struct_bonds)
+
+    return (out_atoms, out_bonds, masked_atoms)
+
+
+def merge_seq_and_struct(seq_atoms, seq_bonds, struct_atoms, struct_bonds):
+    """
+    Combine the atom ids with the molreport information.
+    """
+
+    seq_atoms = seq_atoms.drop(columns=['type', 'hyb', 'charge'])
+    struct_atoms = struct_atoms.drop(columns=['type', 'hyb', 'charge'])
+
+    out_atoms = pd.merge(struct_atoms, seq_atoms, on=list(struct_atoms.columns),
+                         how='outer')
+
+    out_bonds = pd.merge(struct_bonds, seq_bonds, on=list(struct_bonds.columns),
+                         how='outer')
+
+    masked_atoms = list(
+        pd.concat([seq_atoms, struct_atoms, struct_atoms])
+        .drop_duplicates(keep=False)['atom']
+    )
+
+    # Fill gaps in the graph
+    out_atoms, out_bonds, masked_atoms
 
     return (out_atoms, out_bonds, masked_atoms)
 
