@@ -42,6 +42,44 @@ class AtomEmbed(nn.Module):
         return embedded_atoms
 
 
+class AtomOneHotEmbed(nn.Module):
+    """
+    Create one-hot embeddings for atom identities.
+    """
+    def __init__(self):
+        super(AtomOneHotEmbed, self).__init__()
+        
+        self.idx_map = {
+            6: 0,
+            7: 1,
+            8: 2,
+            15: 3,
+            16: 4
+        }
+        
+    def forward(self, atomic_numbers):
+        """
+        Return the embeddings for each atom in the graph.
+        
+        Args:
+        - atoms (torch.LongTensor) - Tensor (n_atoms) containing atomic numbers.
+        
+        Returns:
+        - torch.FloatTensor of dimension (n_atoms, n_features) containing
+            the embedding vectors.
+        """
+        
+        embedded_atoms = torch.zeros((len(atomic_numbers), 6))
+        for i, j in enumerate(atomic_numbers):
+            j = int(j)
+            if j in self.idx_map:
+                embedded_atoms[i, self.idx_map[j]] = 1
+            else:
+                embedded_atoms[i, 5] = 1
+            
+        return embedded_atoms
+
+
 ####################
 # Attention layers #
 ####################
@@ -67,7 +105,12 @@ class GraphAttn(nn.Module):
         self.alpha = alpha
         
         # Operations
-        self.W = nn.Linear(in_features, out_features, bias=True)
+        self.W1 = nn.Linear(in_features, out_features, bias=True)
+        self.W2 = nn.Linear(out_features, out_features, bias=True)
+        self.W3 = nn.Linear(out_features, out_features, bias=True)
+        self.W4 = nn.Linear(out_features, out_features, bias=True)
+        
+        
         self.a = nn.Linear(2*out_features, 1, bias=True)
         self.activation = nn.LeakyReLU(self.alpha)
         
@@ -87,7 +130,10 @@ class GraphAttn(nn.Module):
         """
         
         # Node mat input shape = (n_nodes, out_features)
-        node_fts = self.W(nodes)
+        node_fts = F.relu(self.W1(nodes))
+        node_fts = F.relu(self.W2(node_fts))
+        node_fts = F.relu(self.W3(node_fts))
+        node_fts = (self.W4(node_fts))
         
         # Number of nodes in graph
         n_nodes = node_fts.size()[0]
