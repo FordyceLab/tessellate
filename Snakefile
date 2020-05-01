@@ -5,6 +5,7 @@
 PN_PARENT_DIR  = '/shared_data/protein_structure'
 LOCAL_DATA_DIR = 'data'
 ID_LIST_DIR = 'id_lists'
+TMP_DIR = 'tmp'
 
 ALL_IDS = ['training_{}'.format(thres) for thres in [30, 50, 70, 90, 95, 100]] + ['validation', 'testing']
 TYPES = ['x_ray', 'nmr', 'cryo_em']
@@ -17,40 +18,223 @@ else:
     PROC_TARGETS = []
     
 shell.executable('bash')
+            
+################
+# Get contacts #
+################
 
-###############################
-# Clean and process PDB files #
-###############################
+checkpoint split_cif_file:
+    input:
+        PN_PARENT_DIR + '/PDB/cif/{pdb_id}.cif.gz'
+    output:
+        out_dir = directory(LOCAL_DATA_DIR + '/assemblies/{pdb_id}'),
+        unzipped = temp(TMP_DIR + '/{pdb_id}/{pdb_id}.cif')
+    shell:
+        'mkdir -p {TMP_DIR}/{wildcards.pdb_id} {LOCAL_DATA_DIR}/assemblies {LOCAL_DATA_DIR}/assemblies/{wildcards.pdb_id} && \
+        gunzip -c {input} > {TMP_DIR}/{wildcards.pdb_id}/{wildcards.pdb_id}.cif && \
+        docker run -v $(pwd)/{TMP_DIR}/{wildcards.pdb_id}:/data \
+            -u $(id -u ${{USER}}):$(id -g ${{USER}}) \
+            assemblies:latest \
+            Assemblies.py {wildcards.pdb_id}.cif && \
+        mv {TMP_DIR}/{wildcards.pdb_id}/*-*.cif {LOCAL_DATA_DIR}/assemblies/{wildcards.pdb_id}/'
+        
+rule add_h:
+    input:
+        rules.split_cif_file.output.out_dir
+    output:
+        TMP_DIR + '/{pdb_id}/{number,\d+}/{pdb_id}-{number}_hydro.pdb'
+    shell:
+        'docker run --rm -i \
+            -u $(id -u ${{USER}}):$(id -g ${{USER}}) \
+            -v $(pwd)/{input}:/data_in \
+            -v $(pwd)/{TMP_DIR}/{wildcards.pdb_id}/{wildcards.number}:/data_out \
+            pymol:latest \
+                pymol -c -d "set cif_use_auth, off; \
+                    load /data_in/{wildcards.pdb_id}-{wildcards.number}.cif; \
+                    h_add; \
+                    save /data_out/{wildcards.pdb_id}-{wildcards.number}_hydro.pdb"'
+                
+rule clean_h:
+    input:
+        rules.add_h.output
+    output:
+        TMP_DIR + '/{pdb_id}/{number,\d+}/{pdb_id}-{number}_hydro.mmcif'
+    shell:
+        'cat {input} | \
+            awk \'/_atom_site.auth_asym_id/ {{print "_atom_site.auth_seq_id\\n_atom_site.auth_comp_id" }}1\' | \
+            awk \'/_atom_site.pdbx_PDB_model_num/ {{print \"_atom_site.auth_atom_id\"}}1\' | \
+            awk \'{{OFS = \"\\t\"; if ($1 ==  \"ATOM\" || $1 == \"HETATOM\") $17=$9 FS $6 FS $17 FS $4; print}}\' > {output}'
 
+rule get_full_contacts:
+    input:
+        rules.add_h.output
+    output:
+        LOCAL_DATA_DIR + '/contacts/{pdb_id}-{number,\d+}.full_contacts'
+    shell:
+        'docker run --rm -it \
+            -u $(id -u ${{USER}}):$(id -g ${{USER}}) \
+            -v $(pwd)/tmp/{wildcards.pdb_id}/{wildcards.number}:/data_in \
+            -v $(pwd)/{LOCAL_DATA_DIR}/contacts:/data_out \
+            getcontacts:latest \
+            get_static_contacts.py --structure /data_in/{wildcards.pdb_id}-{wildcards.number}_hydro.pdb \
+                --output /data_out/{wildcards.pdb_id}-{wildcards.number}.full_contacts \
+                --sele "(protein or nucleic) or not (protein or nucleic or solv or lipid)"\
+                --itypes all'
+                
+rule simplify_contacts:
+    input:
+        rules.get_full_contacts.output
+    output:
+        LOCAL_DATA_DIR + '/contacts/{pdb_id}-{number,\d+}.contacts'
+    shell:
+        'grep -v \'#\' {LOCAL_DATA_DIR}/contacts/{wildcards.pdb_id}-{wildcards.number}.full_contacts | \
+                awk \'BEGIN{{OFS=\"\\t\"}} {{print $2,$3,$4}}\' > {output}'
+
+                
+##############
+# Get graphs #
+##############
+
+# Handle the structure files directly
+
+rule remove_solvent:
+    input:
+        rules.split_cif_file.output.out_dir
+    output:
+        TMP_DIR + '/{pdb_id}/{number,\d+}/{pdb_id}-{number}_no_solvent.cif'
+    shell:
+        'docker run --rm -i \
+            -u $(id -u ${{USER}}):$(id -g ${{USER}}) \
+            -v $(pwd)/{input}:/data_in \
+            -v $(pwd)/{TMP_DIR}/{wildcards.pdb_id}/{wildcards.number}:/data_out \
+            pymol:latest \
+                pymol -c -d "set cif_use_auth, off; \
+                    load /data_in/{wildcards.pdb_id}-{wildcards.number}.cif; \
+                    remove (hydro); remove solvent; \
+                    save /data_out/{wildcards.pdb_id}-{wildcards.number}_no_solvent.cif"'
+                
+rule cif_no_solvent2molreport:
+    input:
+        rules.remove_solvent.output
+    output:
+        TMP_DIR + '/{pdb_id}/{number,\d+}/{pdb_id}-{number}_no_solvent.molreport'
+    shell:
+        'docker run --rm -i \
+            -u $(id -u ${{USER}}):$(id -g ${{USER}}) \
+            -v $(pwd)/{TMP_DIR}/{wildcards.pdb_id}/{wildcards.number}:/data \
+            informaticsmatters/obabel:latest \
+                obabel /data/{wildcards.pdb_id}-{wildcards.number}_no_solvent.cif \
+                -O /data/{wildcards.pdb_id}-{wildcards.number}_no_solvent.molreport'
+                
+rule cif_no_solvent2id:
+    input:
+        rules.remove_solvent.output
+    output:
+        TMP_DIR + '/{pdb_id}/{number,\d+}/{pdb_id}-{number}_no_solvent.id'
+    shell:
+        'awk \'/^(HET)?ATO?M/{{OFS=\"\\t\"; print $2,$7":"$6":"$9":"$4,$3}}\' \
+         {input} > {output}'
+                
+
+# Extract the sequences and get full graph of just amino acid sequences
+
+checkpoint cif_extract_fasta:
+    input:
+        rules.split_cif_file.output.out_dir
+    output:
+        directory(TMP_DIR + '/{pdb_id}/{number,\d+}/chain_fastas')
+    shell:
+        'mkdir {output} && \
+         python scripts/extract_polymer_seqs_from_cif.py {input}/{wildcards.pdb_id}-{wildcards.number}.cif && \
+         mv {input}/*.fa {output}'
+            
+rule fasta2molreport:
+    input:
+        rules.cif_extract_fasta.output
+    output:
+        TMP_DIR + '/{pdb_id}/{number,\d+}/{pdb_id}-{number}_{chain,\S}.molreport'
+    shell:
+        'docker run --rm -i \
+            -u $(id -u ${{USER}}):$(id -g ${{USER}}) \
+            -v $(pwd)/{TMP_DIR}/{wildcards.pdb_id}/{wildcards.number}:/data \
+            informaticsmatters/obabel:latest \
+                obabel /data/chain_fastas/{wildcards.pdb_id}-{wildcards.number}_{wildcards.chain}.fa \
+                -d \
+                -O /data/{wildcards.pdb_id}-{wildcards.number}_{wildcards.chain}.molreport'
+
+rule fasta2id:
+    input:
+        rules.cif_extract_fasta.output
+    output:
+        TMP_DIR + '/{pdb_id}/{number,\d+}/{pdb_id}-{number}_{chain,\S}.id'
+    shell:
+        'docker run --rm -it \
+            -u $(id -u ${{USER}}):$(id -g ${{USER}}) \
+            -v $(pwd)/{TMP_DIR}/{wildcards.pdb_id}/{wildcards.number}:/data \
+            informaticsmatters/obabel:latest \
+                obabel \
+                /data/chain_fastas/{wildcards.pdb_id}-{wildcards.number}_{wildcards.chain}.fa \
+                -opdb | \
+                awk \'/^COMPND/{{CHAIN = $2}} /^(HET)?ATO?M/{{OFS=\"\\t\"; $5 = CHAIN; \
+                    print $2,$5":"$4":"$6":"$3,$12}}\' \
+                > {output}'
+                
+def aggregate_chains(wildcards):
+    dir = checkpoints.cif_extract_fasta.get(**wildcards).output[0]
+    chains = glob_wildcards(os.path.join(dir, '{pdb_id}-{number}_{chain}.fa')).chain
+    exts = ['id', 'molreport']
+    return expand(TMP_DIR + '/{pdb_id}/{number}/{pdb_id}-{number}_{chain}.{ext}',
+                  pdb_id=wildcards['pdb_id'],
+                  number=wildcards['number'],
+                  chain=chains,
+                  ext=exts)
+                
+rule process_graph:
+    input:
+        chains = aggregate_chains,
+        no_solv_mr = rules.cif_no_solvent2molreport.output,
+        no_solv_id = rules.cif_no_solvent2id.output
+    output:
+        nodes = LOCAL_DATA_DIR + '/graphs/{pdb_id}-{number,\d+}_nodes.csv',
+        edges = LOCAL_DATA_DIR + '/graphs/{pdb_id}-{number}_edges.csv',
+        mask = LOCAL_DATA_DIR + '/graphs/{pdb_id}-{number}_mask.csv'
+    shell:
+        'python scripts/combine_ids_and_molreport.py {output.nodes} {output.edges} \
+         {output.mask} {input.chains} {input.no_solv_id} {input.no_solv_mr}'
+         
+         
+####################################
+# Process PDB structures from list #
+####################################
+
+def aggregate_assemblies(wildcards):
+    dir = checkpoints.split_cif_file.get(**wildcards).output.out_dir
+    assemblies = glob_wildcards(os.path.join(dir, '{pdb_id}-{number}.cif')).number
+    exts = ['nodes', 'edges', 'mask']
+    
+    graphs = expand(LOCAL_DATA_DIR + '/graphs/{pdb_id}-{number}_{ext}.csv',
+                    pdb_id=wildcards['pdb_id'],
+                    number=assemblies,
+                    ext=exts)
+                    
+    contacts = expand(LOCAL_DATA_DIR + '/contacts/{pdb_id}-{number}.contacts',
+                      pdb_id=wildcards['pdb_id'],
+                      number=assemblies)
+    
+    return graphs + contacts
+
+rule process_PDB_entry:
+    input:
+        aggregate_assemblies,
+        TMP_DIR + '/{pdb_id}/{pdb_id}.cif'
+    output:
+        TMP_DIR + '/success/{pdb_id}'
+    shell:
+        'touch {output}'
+        
 rule process_PDB_list:
     input:
-        expand(LOCAL_DATA_DIR + '/processed/{pdb_id}.atomtypes',
-               pdb_id=PROC_TARGETS),
-        expand(LOCAL_DATA_DIR + '/processed/{pdb_id}.contacts',
-               pdb_id=PROC_TARGETS)
-               
-rule process_PDB_file:
-    input:
-        LOCAL_DATA_DIR + '/cleaned/{pdb_id}.pdb'
-    output:
-        LOCAL_DATA_DIR + '/processed/{pdb_id}.atomtypes',
-        LOCAL_DATA_DIR + '/processed/{pdb_id}.contacts'
-    shell:
-        'docker run -v $(pwd)/{LOCAL_DATA_DIR}/cleaned:/data_in \
-            -v $(pwd)/{LOCAL_DATA_DIR}/processed:/data_out \
-            -u $(id -u ${{USER}}):$(id -g ${{USER}}) \
-            tcs_arpeggio:latest \
-            python /arpeggio/arpeggio.py -v -od /data_out /data_in/{wildcards.pdb_id}.pdb'
-            
-rule clean_PDB_file:
-    input:
-        PN_PARENT_DIR + '/PDB/pdb/pdb{pdb_id}.ent.gz'
-    output:
-        LOCAL_DATA_DIR + '/cleaned/{pdb_id}.pdb'
-    shell:
-        'python scripts/pdbtools/clean_pdb.py\
-            -O {LOCAL_DATA_DIR}/cleaned -rmw {input}'
-
+        expand(TMP_DIR + '/success/{pdb_id}', pdb_id=PROC_TARGETS)
 
 ###############################
 # Process ProteinNet ID lists #
@@ -135,7 +319,6 @@ rule filter_type_structures:
     shell:
         'comm -12 <( sort {input.type_file} ) <( sort {input.ids} ) > {output}'
 
-
 # Download PDB entry type list
 rule download_PDB_entry_type:
     output:
@@ -171,6 +354,7 @@ rule parse_successful_examples:
 
 rule sync_PDB:
     input:
-        PN_PARENT_DIR + '/PDB/pdb'
+        PN_PARENT_DIR + '/PDB/pdb',
+        PN_PARENT_DIR + '/PDB/cif'
     shell:
-        'bash rsyncPDB.sh'
+        'bash scripts/rsyncPDB.sh'

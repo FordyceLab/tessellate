@@ -19,6 +19,16 @@ figs
 
 # Ignore log files
 *.log
+*/lightning_logs/
+
+# Ignore untitled notebooks
+Untitled*
+
+# Ignore test files
+*test*.txt
+
+# Ignore tmp directories
+*tmp/
 
 # Ignore untitled notebooks
 Untitled*
