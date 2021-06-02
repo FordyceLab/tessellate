@@ -177,7 +177,7 @@ tqdm==4.42.1
 traitlets==4.3.3
 typed-ast==1.4.1
 typing==3.7.4.1
-urllib3==1.25.8
+urllib3==1.26.5
 vmd==0.1.1
 wandb==0.8.27
 watchdog==0.10.2
