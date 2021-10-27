@@ -26,7 +26,7 @@ cugraph==0.6.0
 cycler==0.10.0
 Cython==0.29.15
 d3fdgraph==0.34
-dask==2.10.1
+dask==2021.10.0
 datashader==0.10.0
 datashape==0.5.2
 datrie==0.8
