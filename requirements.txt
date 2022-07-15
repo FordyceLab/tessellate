@@ -32,7 +32,7 @@ datashape==0.5.2
 datrie==0.8
 decorator==4.4.1
 defusedxml==0.6.0
-distributed==2.10.0
+distributed==2021.10.0
 docker==4.2.0
 docker-pycreds==0.4.0
 docutils==0.16
